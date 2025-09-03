@@ -1,0 +1,188 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>atovio — Label Uploader</title>
+  <link rel="icon" href="/static/logo.png">
+  <style>
+    :root{ --bg:#0b1020; --card:#121a2b; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --line:#243047; --pill:#0b1222; --highlight:#0b1b34; --btnfg:#08111f; }
+    [data-theme="light"]{ --bg:#ffffff; --card:#f7f8fa; --fg:#0b1020; --muted:#475569; --accent:#2563eb; --line:#e5e7eb; --pill:#eef2ff; --highlight:#edf2ff; --btnfg:#ffffff; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--card)}
+    header img{width:40px;height:40px;border-radius:10px}
+    header h1{font-size:18px;margin:0}
+    header .spacer{flex:1}
+    main{max-width:1100px;margin:20px auto;padding:0 16px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:16px}
+    input[type=file], input[type=text]{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--pill);color:var(--fg)}
+    button{background:var(--accent);color:var(--btnfg);border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+    button.secondary{background:transparent;color:var(--fg);border:1px solid var(--line)}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}
+    th{color:var(--muted")}
+    tr.active{background:var(--highlight)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--pill)}
+    .muted{color:var(--muted);font-size:12px}
+    #status{min-height:18px}
+  </style>
+</head>
+<body>
+<header>
+  <img src="/static/logo.png" alt="logo"/><h1>atovio — Label Uploader & Scanner</h1>
+  <div class="spacer"></div>
+  <button class="secondary" id="themeBtn" type="button">Light Mode</button>
+</header>
+<main>
+  <div class="card">
+    <div class="row">
+      <input id="pdf" type="file" accept="application/pdf"/>
+      <button id="uploadBtn" type="button">Upload PDF</button>
+      <button id="downloadXlsxBtn" class="secondary" type="button">Download XLSX</button>
+      <button id="downloadCsvBtn" class="secondary" type="button">Download CSV</button>
+      <span id="status" class="muted"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="muted">Active AWB:</div>
+      <div id="activeAwb" class="pill">—</div>
+      <input id="scan" type="text" placeholder="Scan here (AWB first, then product_id)" style="flex:1"/>
+    </div>
+  </div>
+
+  <div class="card">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>order_date</th><th>customer_name</th><th>contact_number</th>
+          <th>product_name</th><th>sku</th><th>quantity</th>
+          <th>awb</th><th>product_id</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+(function(){
+  // ---------- THEME ----------
+  const themeBtn = document.getElementById('themeBtn');
+  function setTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    localStorage.setItem('theme', t);
+    themeBtn.textContent = (t==='dark') ? 'Light Mode' : 'Dark Mode';
+  }
+  setTheme(localStorage.getItem('theme') || 'dark');
+  themeBtn.addEventListener('click', ()=> setTheme((localStorage.getItem('theme')||'dark')==='dark'?'light':'dark'));
+
+  // ---------- UI/NET ----------
+  const statusEl = document.getElementById('status');
+  const pdfEl = document.getElementById('pdf');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const downloadXlsxBtn = document.getElementById('downloadXlsxBtn');
+  const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+
+  downloadXlsxBtn.addEventListener('click', ()=> window.location.href = '/download_xlsx?ts=' + Date.now());
+  downloadCsvBtn.addEventListener('click',  ()=> window.location.href = '/download_csv?ts=' + Date.now());
+
+  const scanEl = document.getElementById('scan');
+  const activeAwbEl = document.getElementById('activeAwb');
+  let DATA = [];
+  let ACTIVE_AWB = "";
+
+  function setStatus(msg){ statusEl.textContent = msg || ''; }
+  function isAwb(s){ return /^[A-Z0-9]{8,}$/.test(s || ''); }
+
+  async function safeJSON(res){
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch { return {ok:false, error: text || (res.status+' '+res.statusText)}; }
+  }
+
+  async function refresh(noCache){
+    try{
+      const url = noCache ? '/data?ts='+Date.now() : '/data';
+      const res = await fetch(url, {cache:'no-store'});
+      const j = await safeJSON(res);
+      if(!res.ok){ throw new Error(j.error || ('HTTP '+res.status)); }
+      DATA = j;
+      renderTable();
+      setStatus(`Loaded ${DATA.length} rows.`);
+    }catch(err){
+      console.error(err);
+      setStatus('Load failed: ' + err.message);
+    }
+  }
+
+  function renderTable(){
+    const tb = document.querySelector('#tbl tbody');
+    tb.innerHTML = '';
+    for(const row of DATA){
+      const tr = document.createElement('tr');
+      if(ACTIVE_AWB && row.awb===ACTIVE_AWB) tr.classList.add('active');
+      tr.innerHTML = `
+        <td>${row.order_date||''}</td>
+        <td>${row.customer_name||''}</td>
+        <td>${row.contact_number||''}</td>
+        <td>${row.product_name||''}</td>
+        <td>${row.sku||''}</td>
+        <td>${row.quantity||''}</td>
+        <td>${row.awb||''}</td>
+        <td>${row.product_id||''}</td>`;
+      tb.appendChild(tr);
+    }
+  }
+
+  uploadBtn.addEventListener('click', async ()=>{
+    const f = pdfEl.files && pdfEl.files[0];
+    if(!f){ alert('Choose a PDF'); return; }
+    const fd = new FormData(); fd.append('file', f);
+    setStatus('Parsing…');
+    try{
+      const res = await fetch('/upload', {method:'POST', body:fd});
+      const j = await safeJSON(res);
+      if(!res.ok || !j.ok){ throw new Error(j.error || ('HTTP '+res.status)); }
+      setStatus(`Parsed: ${j.parsed}, Added: ${j.added}.`);
+      await refresh(true);
+    }catch(err){
+      console.error(err);
+      setStatus('Upload failed: ' + err.message);
+    }
+  });
+
+  scanEl.addEventListener('keydown', async (e)=>{
+    if(e.key !== 'Enter') return;
+    const code = e.target.value.trim(); e.target.value = '';
+    if(!code) return;
+
+    if(isAwb(code)){
+      ACTIVE_AWB = code;
+      activeAwbEl.textContent = code;
+      await refresh(true);
+      return;
+    }
+    if(!ACTIVE_AWB){ alert('Scan AWB first'); return; }
+
+    try{
+      const res = await fetch('/assign', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({awb: ACTIVE_AWB, product_id: code})
+      });
+      const j = await safeJSON(res);
+      if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+      await refresh(true);
+    }catch(err){
+      console.error(err);
+      setStatus('Assign failed: ' + err.message);
+      alert('Assign failed: ' + err.message);
+    }
+  });
+
+  refresh(true);
+})();
+</script>
+</body>
+</html>
