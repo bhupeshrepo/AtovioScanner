@@ -1,27 +1,29 @@
-import io
-import logging
-import os
+import os, sys, io, logging
 from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
-from db import init_db, get_all, upsert_orders, assign_product_id, DB_PATH
-from parser import parse_labels_from_pdf
-import openpyxl
-from openpyxl.utils import get_column_letter
-from openpyxl.styles import Font
-
-# -----------------------------------------------------------------------------
-# Flask setup
-# -----------------------------------------------------------------------------
+# Ensure local imports resolve (db.py, parser.py in same folder)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"), template_folder=os.path.join(BASE_DIR, "templates"))
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB upload cap
+sys.path.insert(0, BASE_DIR)
 
-# Logging
+from db import init_db, get_all, upsert_orders, assign_product_id, assign_barcode, DB_PATH  # make sure db.py has assign_barcode
+from parser import parse_labels_from_pdf
+
+# Optional: XLSX export utils
+import openpyxl
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
+
+app = Flask(
+    __name__,
+    static_folder=os.path.join(BASE_DIR, "static"),
+    template_folder=os.path.join(BASE_DIR, "templates"),
+)
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("atovio")
 
-# Ensure DB exists with header
 init_db(DB_PATH)
 
 def _json_error(message, code=400):
@@ -29,7 +31,7 @@ def _json_error(message, code=400):
     return jsonify({"ok": False, "error": message}), code
 
 @app.after_request
-def add_no_cache(resp):
+def nocache(resp):
     try:
         if request.path in ("/data", "/download_csv", "/download_xlsx"):
             resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -38,16 +40,10 @@ def add_no_cache(resp):
         pass
     return resp
 
-# -----------------------------------------------------------------------------
-# Routes
-# -----------------------------------------------------------------------------
+# ---------- Routes ----------
 @app.get("/")
 def index():
     return render_template("index.html")
-
-@app.get("/health")
-def health():
-    return jsonify({"ok": True})
 
 @app.post("/upload")
 def upload():
@@ -58,16 +54,12 @@ def upload():
         return _json_error("Empty filename", 400)
     if not f.filename.lower().endswith(".pdf"):
         return _json_error("Only PDF files are allowed", 415)
-
     try:
         os.chdir(BASE_DIR)
         safe_name = "uploads_" + secure_filename(os.path.basename(f.filename))
         f.save(safe_name)
-        log.info("Saved upload -> %s", safe_name)
-
-        rows = parse_labels_from_pdf(safe_name)  # parser reads Proship labels
+        rows = parse_labels_from_pdf(safe_name)
         added = upsert_orders(rows, source_file=os.path.basename(safe_name))
-        log.info("Parsed rows: %d; Upsert added: %d", len(rows), added)
         return jsonify({"ok": True, "parsed": len(rows), "added": added})
     except Exception as e:
         return _json_error(f"Failed to process PDF: {e}", 500)
@@ -86,16 +78,27 @@ def assign():
         payload = request.get_json(force=True, silent=False)
     except Exception:
         return _json_error("Invalid JSON payload", 400)
-
     awb = (payload or {}).get("awb", "").strip()
     product_id = (payload or {}).get("product_id", "").strip()
     if not awb or not product_id:
         return _json_error("awb and product_id are required", 400)
-
     ok, msg, status = assign_product_id(awb, product_id)
     if not ok:
         return _json_error(msg, status)
     return jsonify({"ok": True, "message": msg})
+
+@app.post("/assign_barcode")
+def assign_barcode_route():
+    try:
+        payload = request.get_json(force=True, silent=False)
+    except Exception:
+        return _json_error("Invalid JSON payload", 400)
+    barcode = (payload or {}).get("barcode", "")
+    active_awb = (payload or {}).get("awb", None)
+    ok, result, status = assign_barcode(barcode, active_awb)
+    if not ok:
+        return _json_error(result, status)
+    return jsonify({"ok": True, **result})
 
 @app.get("/download_csv")
 def download_csv():
@@ -104,7 +107,8 @@ def download_csv():
             data = f.read()
         mem = io.BytesIO(data.encode("utf-8"))
         mem.seek(0)
-        return send_file(mem, mimetype="text/csv", as_attachment=True, download_name=os.path.basename(DB_PATH))
+        return send_file(mem, mimetype="text/csv", as_attachment=True,
+                         download_name=os.path.basename(DB_PATH))
     except Exception as e:
         return _json_error(f"Failed to download CSV: {e}", 500)
 
@@ -115,30 +119,22 @@ def download_xlsx():
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "orders"
-
         headers = ["order_date","customer_name","contact_number","product_name","sku",
                    "quantity","awb","product_id","row_id","created_at","source_file"]
         ws.append(headers)
         for r in rows:
             ws.append([r.get(h, "") for h in headers])
-
         bold = Font(bold=True)
         for c in range(1, len(headers)+1):
             ws.cell(row=1, column=c).font = bold
             ws.column_dimensions[get_column_letter(c)].width = 22
         ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(rows)+1}"
-
-        mem = io.BytesIO()
-        wb.save(mem); mem.seek(0)
+        mem = io.BytesIO(); wb.save(mem); mem.seek(0)
         return send_file(mem,
                          mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                          as_attachment=True, download_name="orders_db.xlsx")
     except Exception as e:
         return _json_error(f"Failed to generate XLSX: {e}", 500)
-
-@app.errorhandler(413)
-def too_large(_):
-    return _json_error("Uploaded file is too large", 413)
 
 @app.errorhandler(404)
 def not_found(_):

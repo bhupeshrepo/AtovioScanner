@@ -1,43 +1,52 @@
 <!doctype html>
-<html data-theme="dark">
+<html data-theme="light"> <!-- default is LIGHT now -->
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>atovio — Label Uploader</title>
   <link rel="icon" href="/static/logo.png">
   <style>
-    :root{ --bg:#0b1020; --card:#121a2b; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --line:#243047; --pill:#0b1222; --highlight:#0b1b34; --btnfg:#08111f; }
-    [data-theme="light"]{ --bg:#ffffff; --card:#f7f8fa; --fg:#0b1020; --muted:#475569; --accent:#2563eb; --line:#e5e7eb; --pill:#eef2ff; --highlight:#edf2ff; --btnfg:#ffffff; }
+    :root{ --bg:#ffffff; --card:#f7f8fa; --fg:#0b1020; --muted:#475569; --accent:#2563eb; --line:#e5e7eb; --pill:#eef2ff; --highlight:#edf2ff; --ok:#059669; --btnfg:#ffffff; }
+    [data-theme="dark"]{ --bg:#0b1020; --card:#121a2b; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --line:#243047; --pill:#0b1222; --highlight:#0b1b34; --ok:#10b981; --btnfg:#08111f; }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
     header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--card)}
     header img{width:40px;height:40px;border-radius:10px}
     header h1{font-size:18px;margin:0}
     header .spacer{flex:1}
-    main{max-width:1100px;margin:20px auto;padding:0 16px}
+    main{max-width:1200px;margin:20px auto;padding:0 16px}
     .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:16px}
     input[type=file], input[type=text]{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--pill);color:var(--fg)}
     button{background:var(--accent);color:var(--btnfg);border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
     button.secondary{background:transparent;color:var(--fg);border:1px solid var(--line)}
     table{width:100%;border-collapse:collapse;font-size:14px}
-    th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}
+    th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
     th{color:var(--muted")}
     tr.active{background:var(--highlight)}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--pill)}
     .muted{color:var(--muted);font-size:12px}
+    .ok{color:var(--ok);font-weight:600}
     #status{min-height:18px}
+    .board{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
+    @media (min-width: 980px){ .board{grid-template-columns:1fr 1fr} }
+    .card h2{margin:0 0 10px 0;font-size:16px;display:flex;align-items:center;gap:10px}
+    .badge{font-size:12px;border:1px solid var(--line);background:var(--pill);border-radius:999px;padding:2px 8px}
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .chip{display:inline-block;border:1px solid var(--line);background:var(--pill);border-radius:999px;padding:0 6px;font-size:12px}
   </style>
 </head>
 <body>
 <header>
   <img src="/static/logo.png" alt="logo"/><h1>atovio — Label Uploader & Scanner</h1>
   <div class="spacer"></div>
-  <button class="secondary" id="themeBtn" type="button">Light Mode</button>
+  <!-- Theme button: will only toggle on mouse/pointer, not keyboard -->
+  <button class="secondary" id="themeBtn" type="button" tabindex="-1" aria-label="Toggle theme">Dark Mode</button>
 </header>
+
 <main>
   <div class="card">
-    <div class="row">
+    <div class="toolbar">
       <input id="pdf" type="file" accept="application/pdf"/>
       <button id="uploadBtn" type="button">Upload PDF</button>
       <button id="downloadXlsxBtn" class="secondary" type="button">Download XLSX</button>
@@ -47,35 +56,63 @@
     <div class="row" style="margin-top:10px">
       <div class="muted">Active AWB:</div>
       <div id="activeAwb" class="pill">—</div>
-      <input id="scan" type="text" placeholder="Scan here (AWB first, then product_id)" style="flex:1"/>
+      <input id="scan" type="text" placeholder="Scan here (barcode like AT0001-A001; AWB optional)" style="flex:1"
+             autocomplete="off" autocapitalize="off" spellcheck="false" autofocus />
     </div>
   </div>
 
   <div class="card">
-    <table id="tbl">
-      <thead>
-        <tr>
-          <th>order_date</th><th>customer_name</th><th>contact_number</th>
-          <th>product_name</th><th>sku</th><th>quantity</th>
-          <th>awb</th><th>product_id</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+    <div class="row">
+      <input id="search" type="text" placeholder="Search customer / SKU / product / AWB" style="flex:1"/>
+      <label class="muted"><input type="checkbox" id="onlyAwb"/> Show only Active AWB</label>
+      <label class="muted"><input type="checkbox" id="showAssigned"/> Show assigned rows</label>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="card">
+      <h2>Products (with SKU) <span id="countWith" class="badge">0</span></h2>
+      <table id="tblWith">
+        <thead>
+          <tr>
+            <th>order_date</th><th>customer_name</th><th>contact_number</th>
+            <th>product_name</th><th>sku</th><th>quantity</th><th>awb</th><th>product_id</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Extras (no SKU) <span id="countNo" class="badge">0</span></h2>
+      <table id="tblNo">
+        <thead>
+          <tr>
+            <th>order_date</th><th>customer_name</th><th>contact_number</th>
+            <th>product_name</th><th>quantity</th><th>awb</th><th>product_id</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 </main>
 
 <script>
 (function(){
-  // ---------- THEME ----------
+  // ---------- THEME (default light; ignore keyboard clicks) ----------
   const themeBtn = document.getElementById('themeBtn');
   function setTheme(t){
     document.documentElement.setAttribute('data-theme', t);
     localStorage.setItem('theme', t);
     themeBtn.textContent = (t==='dark') ? 'Light Mode' : 'Dark Mode';
   }
-  setTheme(localStorage.getItem('theme') || 'dark');
-  themeBtn.addEventListener('click', ()=> setTheme((localStorage.getItem('theme')||'dark')==='dark'?'light':'dark'));
+  // default to light if nothing stored
+  setTheme(localStorage.getItem('theme') || 'light');
+  // Only toggle on actual pointer/mouse clicks (not Enter/Space)
+  themeBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); setTheme((localStorage.getItem('theme')||'light')==='light'?'dark':'light'); });
+  // Block keyboard activation on the button just in case
+  themeBtn.addEventListener('keydown', (e)=> e.preventDefault());
 
   // ---------- UI/NET ----------
   const statusEl = document.getElementById('status');
@@ -83,17 +120,29 @@
   const uploadBtn = document.getElementById('uploadBtn');
   const downloadXlsxBtn = document.getElementById('downloadXlsxBtn');
   const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+  const scanEl = document.getElementById('scan');
+  const activeAwbEl = document.getElementById('activeAwb');
+  const searchEl = document.getElementById('search');
+  const onlyAwbEl = document.getElementById('onlyAwb');
+  const showAssignedEl = document.getElementById('showAssigned');
+
+  const tbWith = document.querySelector('#tblWith tbody');
+  const tbNo   = document.querySelector('#tblNo tbody');
+  const countWith = document.getElementById('countWith');
+  const countNo   = document.getElementById('countNo');
 
   downloadXlsxBtn.addEventListener('click', ()=> window.location.href = '/download_xlsx?ts=' + Date.now());
   downloadCsvBtn.addEventListener('click',  ()=> window.location.href = '/download_csv?ts=' + Date.now());
 
-  const scanEl = document.getElementById('scan');
-  const activeAwbEl = document.getElementById('activeAwb');
   let DATA = [];
   let ACTIVE_AWB = "";
 
+  function focusScanner(){ if (scanEl) { scanEl.focus(); scanEl.select && scanEl.select(); } }
+  focusScanner();
+
   function setStatus(msg){ statusEl.textContent = msg || ''; }
-  function isAwb(s){ return /^[A-Z0-9]{8,}$/.test(s || ''); }
+  function isAwb(s){ return /^[A-Z0-9]{8,}$/i.test((s||'')); }
+  function isBarcode(s){ return /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z]\s*\d{1,3}\s*$/.test((s||'')); }
 
   async function safeJSON(res){
     const text = await res.text();
@@ -108,20 +157,90 @@
       const j = await safeJSON(res);
       if(!res.ok){ throw new Error(j.error || ('HTTP '+res.status)); }
       DATA = j;
-      renderTable();
+      renderTables();
       setStatus(`Loaded ${DATA.length} rows.`);
     }catch(err){
       console.error(err);
       setStatus('Load failed: ' + err.message);
+    } finally {
+      focusScanner();
     }
   }
 
-  function renderTable(){
-    const tb = document.querySelector('#tbl tbody');
-    tb.innerHTML = '';
-    for(const row of DATA){
+  function matchesSearch(row, q){
+    if(!q) return true;
+    q = q.toLowerCase();
+    return (
+      (row.customer_name||'').toLowerCase().includes(q) ||
+      (row.product_name||'').toLowerCase().includes(q) ||
+      (row.sku||'').toLowerCase().includes(q) ||
+      (row.awb||'').toLowerCase().includes(q) ||
+      (row.contact_number||'').toLowerCase().includes(q)
+    );
+  }
+
+  // --------- Units-based progress ---------
+  function qtyOf(row){
+    const s = (row.quantity||'').toString().trim();
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function scannedOf(row){
+    const p = (row.product_id||'').trim();
+    return p ? p.split(',').filter(Boolean).length : 0;
+  }
+  function buildGroupMaps(rows){
+    const skuRows = rows.filter(r => (r.sku||'').trim() !== '');
+    const totalUnits = new Map();
+    const scannedUnits  = new Map();
+    for(const r of skuRows){
+      const c = (r.contact_number||'').trim();
+      totalUnits.set(c, (totalUnits.get(c)||0) + qtyOf(r));
+      scannedUnits.set(c, (scannedUnits.get(c)||0) + scannedOf(r));
+    }
+    return { totalUnits, scannedUnits };
+  }
+  function groupComplete(contact, maps){
+    const c = (contact||'').trim();
+    const t = maps.totalUnits.get(c)||0;
+    const d = maps.scannedUnits.get(c)||0;
+    return t>0 && d>=t;
+  }
+  function groupProgress(contact, maps){
+    const c = (contact||'').trim();
+    const t = maps.totalUnits.get(c)||0;
+    const d = maps.scannedUnits.get(c)||0;
+    return {d, t};
+  }
+
+  function renderTables(){
+    const q = searchEl.value.trim();
+    const onlyAwb = onlyAwbEl ? !!onlyAwbEl.checked : false;
+    const showAssigned = showAssignedEl ? !!showAssignedEl.checked : false;
+
+    let filtered = DATA.filter(r => {
+      if(onlyAwb && ACTIVE_AWB && r.awb !== ACTIVE_AWB) return false;
+      return matchesSearch(r, q);
+    });
+
+    const maps = buildGroupMaps(filtered);
+    const visible = filtered.filter(r => !groupComplete(r.contact_number, maps));
+
+    const withSku = visible.filter(r => (r.sku||'').trim() !== '');
+    const noSku   = visible.filter(r => (r.sku||'').trim() === '');
+
+    // with SKU
+    tbWith.innerHTML = '';
+    for(const row of withSku){
       const tr = document.createElement('tr');
       if(ACTIVE_AWB && row.awb===ACTIVE_AWB) tr.classList.add('active');
+      const scanned = scannedOf(row);
+      const qty = qtyOf(row);
+      const rowDone = qty>0 && scanned>=qty;
+      const chip = rowDone ? `<span class="chip ok">✅ ${qty}/${qty}</span>` : `<span class="chip">${scanned}/${qty}</span>`;
+      const gp = groupProgress(row.contact_number, maps);
+      const groupChip = gp.t>0 ? `<span class="chip">${gp.d}/${gp.t} total</span>` : '';
+      if(!showAssigned && rowDone && groupComplete(row.contact_number, maps)){ continue; }
       tr.innerHTML = `
         <td>${row.order_date||''}</td>
         <td>${row.customer_name||''}</td>
@@ -130,12 +249,33 @@
         <td>${row.sku||''}</td>
         <td>${row.quantity||''}</td>
         <td>${row.awb||''}</td>
-        <td>${row.product_id||''}</td>`;
-      tb.appendChild(tr);
+        <td>${row.product_id||''}</td>
+        <td>${chip} ${groupChip}</td>`;
+      tbWith.appendChild(tr);
     }
+    countWith.textContent = tbWith.querySelectorAll('tr').length;
+
+    // no SKU
+    tbNo.innerHTML = '';
+    for(const row of noSku){
+      const tr = document.createElement('tr');
+      if(ACTIVE_AWB && row.awb===ACTIVE_AWB) tr.classList.add('active');
+      tr.innerHTML = `
+        <td>${row.order_date||''}</td>
+        <td>${row.customer_name||''}</td>
+        <td>${row.contact_number||''}</td>
+        <td>${row.product_name||''}</td>
+        <td>${row.quantity||''}</td>
+        <td>${row.awb||''}</td>
+        <td>${row.product_id||''}</td>`;
+      tbNo.appendChild(tr);
+    }
+    countNo.textContent = tbNo.querySelectorAll('tr').length;
   }
 
+  // Upload
   uploadBtn.addEventListener('click', async ()=>{
+    focusScanner();
     const f = pdfEl.files && pdfEl.files[0];
     if(!f){ alert('Choose a PDF'); return; }
     const fd = new FormData(); fd.append('file', f);
@@ -149,38 +289,64 @@
     }catch(err){
       console.error(err);
       setStatus('Upload failed: ' + err.message);
+    } finally {
+      focusScanner();
     }
   });
 
+  // Scanner: swallow Enter so it never “clicks” other buttons
   scanEl.addEventListener('keydown', async (e)=>{
     if(e.key !== 'Enter') return;
-    const code = e.target.value.trim(); e.target.value = '';
-    if(!code) return;
+    e.preventDefault(); e.stopPropagation(); // STOP bubbling to page/buttons
 
-    if(isAwb(code)){
-      ACTIVE_AWB = code;
-      activeAwbEl.textContent = code;
-      await refresh(true);
+    const code = e.target.value.trim(); e.target.value = '';
+    if(!code) { focusScanner(); return; }
+
+    if(isBarcode(code)){
+      try{
+        const res = await fetch('/assign_barcode', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({barcode: code, awb: (window.ACTIVE_AWB || null)})
+        });
+        const j = await safeJSON(res);
+        if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+        setStatus(j.message || 'Assigned');
+        await refresh(true);
+      }catch(err){
+        console.error(err);
+        setStatus('Barcode assign failed: ' + err.message);
+        alert('Barcode assign failed: ' + err.message);
+      } finally {
+        focusScanner();
+      }
       return;
     }
-    if(!ACTIVE_AWB){ alert('Scan AWB first'); return; }
 
-    try{
-      const res = await fetch('/assign', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({awb: ACTIVE_AWB, product_id: code})
-      });
-      const j = await safeJSON(res);
-      if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+    if(isAwb(code)){
+      window.ACTIVE_AWB = code.toUpperCase();
+      activeAwbEl.textContent = window.ACTIVE_AWB || '—';
       await refresh(true);
-    }catch(err){
-      console.error(err);
-      setStatus('Assign failed: ' + err.message);
-      alert('Assign failed: ' + err.message);
+      focusScanner();
+      return;
     }
+
+    setStatus('Not an AWB or barcode');
+    focusScanner();
   });
 
+  // Filters
+  [onlyAwbEl, showAssignedEl].forEach(el => {
+    if(el){ el.addEventListener('change', ()=>{ renderTables(); focusScanner(); }); }
+  });
+  searchEl.addEventListener('input', ()=>{ renderTables(); focusScanner(); });
+
+  // Keep input focused if user clicks elsewhere by mistake
+  window.addEventListener('click', (e)=> {
+    if (e.target !== scanEl) setTimeout(focusScanner, 0);
+  });
+
+  // Init
   refresh(true);
 })();
 </script>
