@@ -315,21 +315,42 @@ def _parse_single_order(order_lines: List[str]) -> List[Dict[str, Any]]:
     return rows
 
 # ---------------- Public entrypoint ----------------
-def parse_labels_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
+def parse_labels_from_pdf(pdf_path: str):
+    """
+    Page-wise parsing: 1 page == 1 label.
+    Adds 'page_index' (1-based) to each row.
+    """
     doc = fitz.open(pdf_path)
-    lines_all: List[str] = []
+    all_rows = []
+
     for p in range(len(doc)):
         t = doc.load_page(p).get_text("text")
-        lines_all += [ln for ln in t.splitlines()]
-        lines_all.append("<<<PAGE>>>")
-    doc.close()
-
-    orders = _segment_labels(lines_all)
-
-    all_rows: List[Dict[str, Any]] = []
-    for seg in orders:
-        seg_clean = [(s or "").strip() for s in seg]
-        if not any(seg_clean):
+        lines = [(ln or "").strip() for ln in t.splitlines()]
+        if not any(lines):
             continue
-        all_rows.extend(_parse_single_order(seg_clean))
+
+        # If a rare page has multiple labels separated by the footer, split
+        footer_hits = sum(1 for ln in lines if (ln or "").lower().startswith(ORDER_END_TOKEN))
+        segments = []
+        if footer_hits >= 2:
+            buf = []
+            for ln in lines:
+                buf.append(ln)
+                if (ln or "").lower().startswith(ORDER_END_TOKEN):
+                    if any((s or "").strip() for s in buf):
+                        segments.append(buf)
+                    buf = []
+            if buf and any(buf):
+                segments.append(buf)
+        else:
+            segments = [lines]
+
+        for seg in segments:
+            rows = _parse_single_order(seg)
+            # inject page_index for downstream print
+            for r in rows:
+                r["page_index"] = str(p + 1)  # 1-based page
+            all_rows.extend(rows)
+
+    doc.close()
     return all_rows

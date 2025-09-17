@@ -1,5 +1,5 @@
 <!doctype html>
-<html data-theme="light"> <!-- default is LIGHT now -->
+<html data-theme="light">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -30,17 +30,20 @@
     #status{min-height:18px}
     .board{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
     @media (min-width: 980px){ .board{grid-template-columns:1fr 1fr} }
-    .card h2{margin:0 0 10px 0;font-size:16px;display:flex;align-items:center;gap:10px}
+    .card h2{margin:0 0 8px 0;font-size:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     .badge{font-size:12px;border:1px solid var(--line);background:var(--pill);border-radius:999px;padding:2px 8px}
     .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .chip{display:inline-block;border:1px solid var(--line);background:var(--pill);border-radius:999px;padding:0 6px;font-size:12px}
+    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--pill);border-radius:999px;padding:0 8px;font-size:12px;margin:2px 6px 0 0}
+    .sq{display:inline-block;width:10px;height:10px;border-radius:2px;border:1px solid var(--line)}
+    .sku-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
+    .divider{opacity:.6;margin:0 6px}
+    .btn-icon{border:1px solid var(--line);background:var(--pill);border-radius:8px;padding:4px 8px;cursor:pointer}
   </style>
 </head>
 <body>
 <header>
   <img src="/static/logo.png" alt="logo"/><h1>atovio — Label Uploader & Scanner</h1>
   <div class="spacer"></div>
-  <!-- Theme button: will only toggle on mouse/pointer, not keyboard -->
   <button class="secondary" id="themeBtn" type="button" tabindex="-1" aria-label="Toggle theme">Dark Mode</button>
 </header>
 
@@ -51,12 +54,14 @@
       <button id="uploadBtn" type="button">Upload PDF</button>
       <button id="downloadXlsxBtn" class="secondary" type="button">Download XLSX</button>
       <button id="downloadCsvBtn" class="secondary" type="button">Download CSV</button>
+      <input id="printerName" type="text" placeholder="Printer name (exact)" style="width:240px"/>
+      <button id="savePrinter" class="secondary" type="button">Save Printer</button>
       <span id="status" class="muted"></span>
     </div>
     <div class="row" style="margin-top:10px">
       <div class="muted">Active AWB:</div>
       <div id="activeAwb" class="pill">—</div>
-      <input id="scan" type="text" placeholder="Scan here (barcode like AT0001-A001; AWB optional)" style="flex:1"
+      <input id="scan" type="text" placeholder="Scan here (AT0001-A001 for devices; AT0020 for loose; AWB also accepted)" style="flex:1"
              autocomplete="off" autocapitalize="off" spellcheck="false" autofocus />
     </div>
   </div>
@@ -71,7 +76,10 @@
 
   <div class="board">
     <div class="card">
-      <h2>Products (with SKU) <span id="countWith" class="badge">0</span></h2>
+      <h2>Products (with SKU)</h2>
+      <!-- totals line under header -->
+      <div id="skuLine" class="sku-line"></div>
+
       <table id="tblWith">
         <thead>
           <tr>
@@ -89,7 +97,7 @@
         <thead>
           <tr>
             <th>order_date</th><th>customer_name</th><th>contact_number</th>
-            <th>product_name</th><th>quantity</th><th>awb</th><th>product_id</th>
+            <th>product_name</th><th>quantity</th><th>awb</th><th>product_id</th><th>Confirm</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -99,19 +107,24 @@
 </main>
 
 <script>
+const printerEl = document.getElementById('printerName');
+const savePrinterBtn = document.getElementById('savePrinter');
+function getPrinter(){ return (localStorage.getItem('printerName') || '').trim(); }
+function setPrinter(v){ localStorage.setItem('printerName', (v||'').trim()); }
+printerEl.value = getPrinter();
+savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); alert('Printer saved'); });
+
 (function(){
-  // ---------- THEME (default light; ignore keyboard clicks) ----------
+  
+  // ---------- THEME ----------
   const themeBtn = document.getElementById('themeBtn');
   function setTheme(t){
     document.documentElement.setAttribute('data-theme', t);
     localStorage.setItem('theme', t);
     themeBtn.textContent = (t==='dark') ? 'Light Mode' : 'Dark Mode';
   }
-  // default to light if nothing stored
   setTheme(localStorage.getItem('theme') || 'light');
-  // Only toggle on actual pointer/mouse clicks (not Enter/Space)
   themeBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); setTheme((localStorage.getItem('theme')||'light')==='light'?'dark':'light'); });
-  // Block keyboard activation on the button just in case
   themeBtn.addEventListener('keydown', (e)=> e.preventDefault());
 
   // ---------- UI/NET ----------
@@ -128,21 +141,37 @@
 
   const tbWith = document.querySelector('#tblWith tbody');
   const tbNo   = document.querySelector('#tblNo tbody');
-  const countWith = document.getElementById('countWith');
+  const skuLine = document.getElementById('skuLine');
   const countNo   = document.getElementById('countNo');
-
-  downloadXlsxBtn.addEventListener('click', ()=> window.location.href = '/download_xlsx?ts=' + Date.now());
-  downloadCsvBtn.addEventListener('click',  ()=> window.location.href = '/download_csv?ts=' + Date.now());
 
   let DATA = [];
   let ACTIVE_AWB = "";
+
+  // Colors mapping
+  const COLOR_BY_SKU = {
+    AT0001: {name:'Black',   style:'background:#000'},
+    AT0002: {name:'Blue',    style:'background:#2563eb'},
+    AT0003: {name:'White',   style:'background:#fff; border:1px solid #d1d5db'},
+    AT0004: {name:'Pink',    style:'background:#ffc0cb'},
+    AT0020: {name:'Black',   style:'background:#000'},
+    AT0021: {name:'Gradient black', style:'background:linear-gradient(45deg,#000,#333)'},
+    AT0022: {name:'Silver',  style:'background:#c0c0c0'}
+  };
+  const PRIMARY_SKUS = ['AT0001','AT0002','AT0003','AT0004'];
 
   function focusScanner(){ if (scanEl) { scanEl.focus(); scanEl.select && scanEl.select(); } }
   focusScanner();
 
   function setStatus(msg){ statusEl.textContent = msg || ''; }
+  function normSku(s){ return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
   function isAwb(s){ return /^[A-Z0-9]{8,}$/i.test((s||'')); }
-  function isBarcode(s){ return /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z]\s*\d{1,3}\s*$/.test((s||'')); }
+  function isBarcode(s){
+    s = (s||'');
+    const primary = /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z]\s*\d{1,3}\s*$/;      // AT0001-A001
+    const generic = /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z0-9]{1,10}\s*$/;       // AT0020-ABC123
+    const skuOnly = /^\s*(AT0020|AT0021|AT0022)\s*$/i;                        // bare loose SKUs
+    return primary.test(s) || generic.test(s) || skuOnly.test(s);
+  }
 
   async function safeJSON(res){
     const text = await res.text();
@@ -179,16 +208,10 @@
     );
   }
 
-  // --------- Units-based progress ---------
-  function qtyOf(row){
-    const s = (row.quantity||'').toString().trim();
-    const n = parseInt(s, 10);
-    return Number.isFinite(n) ? n : 0;
-  }
-  function scannedOf(row){
-    const p = (row.product_id||'').trim();
-    return p ? p.split(',').filter(Boolean).length : 0;
-  }
+  // --------- Units progress ----------
+  function qtyOf(row){ const n = parseInt((row.quantity||'').toString().trim(),10); return Number.isFinite(n)?n:0; }
+  function scannedOf(row){ const p=(row.product_id||'').trim(); return p? p.split(',').filter(Boolean).length : 0; }
+
   function buildGroupMaps(rows){
     const skuRows = rows.filter(r => (r.sku||'').trim() !== '');
     const totalUnits = new Map();
@@ -208,13 +231,39 @@
   }
   function groupProgress(contact, maps){
     const c = (contact||'').trim();
-    const t = maps.totalUnits.get(c)||0;
-    const d = maps.scannedUnits.get(c)||0;
-    return {d, t};
+    return { d: (maps.scannedUnits.get(c)||0), t: (maps.totalUnits.get(c)||0) };
+  }
+
+  function calcSkuUnitTotals(rows){
+    const totals = new Map();
+    for(const r of rows){
+      const s = normSku(r.sku);
+      if(!s) continue;
+      totals.set(s, (totals.get(s)||0) + qtyOf(r));
+    }
+    return totals;
+  }
+
+  function renderSkuChips(totals){
+    const present = Array.from(totals.keys());
+    const prim = PRIMARY_SKUS.filter(s => present.includes(s));
+    const extra = present.filter(s => !PRIMARY_SKUS.includes(s)).sort();
+    function chip(sku){
+      const val = totals.get(sku) || 0;
+      const color = COLOR_BY_SKU[sku]?.style || 'background:#999';
+      const title = COLOR_BY_SKU[sku]?.name || 'colour';
+      return `<span class="chip" title="${title}">
+                <span class="sq" style="${color}"></span>
+                ${sku}: ${val}
+              </span>`;
+    }
+    const primHtml = prim.map(chip).join('');
+    const extraHtml = extra.length ? `<span class="divider">|</span>` + extra.map(chip).join('') : '';
+    skuLine.innerHTML = primHtml + extraHtml;
   }
 
   function renderTables(){
-    const q = searchEl.value.trim();
+    const q = (searchEl.value||'').trim();
     const onlyAwb = onlyAwbEl ? !!onlyAwbEl.checked : false;
     const showAssigned = showAssignedEl ? !!showAssignedEl.checked : false;
 
@@ -229,13 +278,15 @@
     const withSku = visible.filter(r => (r.sku||'').trim() !== '');
     const noSku   = visible.filter(r => (r.sku||'').trim() === '');
 
-    // with SKU
+    // SKU totals line
+    renderSkuChips(calcSkuUnitTotals(withSku));
+
+    // LEFT: with SKU rows
     tbWith.innerHTML = '';
     for(const row of withSku){
       const tr = document.createElement('tr');
       if(ACTIVE_AWB && row.awb===ACTIVE_AWB) tr.classList.add('active');
-      const scanned = scannedOf(row);
-      const qty = qtyOf(row);
+      const scanned = scannedOf(row), qty = qtyOf(row);
       const rowDone = qty>0 && scanned>=qty;
       const chip = rowDone ? `<span class="chip ok">✅ ${qty}/${qty}</span>` : `<span class="chip">${scanned}/${qty}</span>`;
       const gp = groupProgress(row.contact_number, maps);
@@ -253,11 +304,12 @@
         <td>${chip} ${groupChip}</td>`;
       tbWith.appendChild(tr);
     }
-    countWith.textContent = tbWith.querySelectorAll('tr').length;
 
-    // no SKU
+    // RIGHT: no SKU — add confirm button
     tbNo.innerHTML = '';
     for(const row of noSku){
+      // hide confirmed extras
+      if ((row.product_id||'').trim() === 'CONFIRMED_EXTRA') continue;
       const tr = document.createElement('tr');
       if(ACTIVE_AWB && row.awb===ACTIVE_AWB) tr.classList.add('active');
       tr.innerHTML = `
@@ -267,15 +319,31 @@
         <td>${row.product_name||''}</td>
         <td>${row.quantity||''}</td>
         <td>${row.awb||''}</td>
-        <td>${row.product_id||''}</td>`;
+        <td>${row.product_id||''}</td>
+        <td><button class="btn-icon" data-rowid="${row.row_id}">✅</button></td>`;
       tbNo.appendChild(tr);
     }
     countNo.textContent = tbNo.querySelectorAll('tr').length;
+
+    // wire confirm buttons
+    tbNo.querySelectorAll('button.btn-icon').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const id = btn.getAttribute('data-rowid');
+        try{
+          const res = await fetch('/confirm_extra', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({row_id: id})
+          });
+          const j = await safeJSON(res);
+          if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+          setStatus('Confirmed extra ✓'); await refresh(true);
+        }catch(err){ alert('Confirm failed: ' + err.message); }
+      });
+    });
   }
 
   // Upload
   uploadBtn.addEventListener('click', async ()=>{
-    focusScanner();
     const f = pdfEl.files && pdfEl.files[0];
     if(!f){ alert('Choose a PDF'); return; }
     const fd = new FormData(); fd.append('file', f);
@@ -289,62 +357,90 @@
     }catch(err){
       console.error(err);
       setStatus('Upload failed: ' + err.message);
-    } finally {
-      focusScanner();
     }
   });
 
-  // Scanner: swallow Enter so it never “clicks” other buttons
+  // Scanner (swallow Enter; keep focus)
   scanEl.addEventListener('keydown', async (e)=>{
-    if(e.key !== 'Enter') return;
-    e.preventDefault(); e.stopPropagation(); // STOP bubbling to page/buttons
+  if(e.key !== 'Enter') return;
+  e.preventDefault(); e.stopPropagation();
 
-    const code = e.target.value.trim(); e.target.value = '';
-    if(!code) { focusScanner(); return; }
+  const code = e.target.value.trim(); e.target.value = '';
+  if(!code) { return; }
 
-    if(isBarcode(code)){
-      try{
-        const res = await fetch('/assign_barcode', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({barcode: code, awb: (window.ACTIVE_AWB || null)})
-        });
-        const j = await safeJSON(res);
-        if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
-        setStatus(j.message || 'Assigned');
-        await refresh(true);
-      }catch(err){
-        console.error(err);
-        setStatus('Barcode assign failed: ' + err.message);
-        alert('Barcode assign failed: ' + err.message);
-      } finally {
-        focusScanner();
-      }
-      return;
+  // BARCODE
+  if(isBarcode(code)){
+    try{
+      const res = await fetch('/assign_barcode', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ barcode: code, awb: (window.ACTIVE_AWB || null) })
+      });
+      const j = await safeJSON(res);
+      if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+
+      setStatus(j.message || 'Assigned');
+
+      // >>> NEW: auto-print the page when the whole label (incl. loose items) is complete
+      // After: setStatus(j.message || 'Assigned');
+
+if (j.group_complete && j.print_info && j.print_info.source_file && j.print_info.page_index) {
+  const printer = getPrinter();
+  if (printer) {
+    // SILENT server-side print to the specific printer
+    try{
+      const pr = await fetch('/label_print_silent', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          source: j.print_info.source_file,
+          page:   parseInt(j.print_info.page_index, 10),
+          printer
+        })
+      });
+      const pj = await safeJSON(pr);
+      if (!pr.ok || !pj.ok) throw new Error(pj.error || pj.message || ('HTTP '+pr.status));
+      setStatus(`Printed → ${printer}`);
+    }catch(err){
+      console.error(err);
+      // Fallback: open the print page (will show dialog)
+      const url = `/label_print?source=${encodeURIComponent(j.print_info.source_file)}&page=${encodeURIComponent(j.print_info.page_index)}`;
+      window.open(url, '_blank');
+      setStatus('Silent print failed; opened print dialog instead');
     }
+  } else {
+    // No printer configured: open normal print tab (dialog)
+    const url = `/label_print?source=${encodeURIComponent(j.print_info.source_file)}&page=${encodeURIComponent(j.print_info.page_index)}`;
+    window.open(url, '_blank');
+  }
+}
 
-    if(isAwb(code)){
-      window.ACTIVE_AWB = code.toUpperCase();
-      activeAwbEl.textContent = window.ACTIVE_AWB || '—';
+      // <<< NEW END
+
       await refresh(true);
-      focusScanner();
-      return;
+    }catch(err){
+      console.error(err);
+      setStatus('Barcode assign failed: ' + err.message);
+      alert('Barcode assign failed: ' + err.message);
     }
+    return;
+  }
 
-    setStatus('Not an AWB or barcode');
-    focusScanner();
-  });
+  // AWB
+  if(isAwb(code)){
+    window.ACTIVE_AWB = code.toUpperCase();
+    activeAwbEl.textContent = window.ACTIVE_AWB || '—';
+    await refresh(true);
+    return;
+  }
+
+  setStatus('Not an AWB or barcode');
+});
+
 
   // Filters
-  [onlyAwbEl, showAssignedEl].forEach(el => {
-    if(el){ el.addEventListener('change', ()=>{ renderTables(); focusScanner(); }); }
-  });
-  searchEl.addEventListener('input', ()=>{ renderTables(); focusScanner(); });
-
-  // Keep input focused if user clicks elsewhere by mistake
-  window.addEventListener('click', (e)=> {
-    if (e.target !== scanEl) setTimeout(focusScanner, 0);
-  });
+  ;[onlyAwbEl, showAssignedEl].forEach(el => { if(el){ el.addEventListener('change', renderTables); }});
+  searchEl.addEventListener('input', renderTables);
 
   // Init
   refresh(true);
