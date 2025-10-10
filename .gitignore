@@ -68,3 +68,5 @@ dmypy.json
 .prof
 
 *.pdf
+
+*.bat
