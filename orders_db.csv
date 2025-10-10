@@ -1,0 +1,80 @@
+order_date,customer_name,contact_number,product_name,sku,quantity,awb,product_id,row_id,created_at,source_file,page_index
+22-09-2025,T R Sailaja,9653285886,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,90234777426,A1140,7fab2111a607,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,1
+22-09-2025,ZeusX .,9061057473,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,80902940915,B521,4b589b6cb9c1,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,2
+22-09-2025,ZeusX .,9061057473,Extended warranty,,1,80902940915,,79a0e36e2ae7,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,2
+22-09-2025,Arvind M Baspure,9535008888,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,2,90234782260,"C688,C694",87a471bf4a9a,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,3
+22-09-2025,Dr. Ajit kumar. S Sreedharan potti,9447020300,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,90234784592,A994,2a6a94fd7a99,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,4
+22-09-2025,Suresh Sewada,9468906868,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,90234785432,A1041,a14925b71e1e,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,5
+22-09-2025,Aditi Thukral,9891007720,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,80902944161,C716,9c0cfce95c9c,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,6
+22-09-2025,Nirmal Singh,9019001309,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,2,80902944511,"A995,A1148",eaff05648f80,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,7
+22-09-2025,Rishikesh Patil,9820024042,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,90234792270,C701,a6d65ee96743,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,8
+22-09-2025,Rishikesh Patil,9820024042,Extended warranty,,1,90234792270,,a56aa8a458f2,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,8
+22-09-2025,Belinda Wright,9811190690,Silver Metallic Chain,AT0021,1,76602558130,AT0021,52e61b5668b3,9/22/2025 12:25,uploads_60538d58-072c-4175-ba8a-87881cdd2e1b_1.pdf,9
+24-09-2025,Sapana Pandya,9820885249,One white pebble,,1,1.44E+13,CONFIRMED_EXTRA,56a3e66820c0,9/24/2025 12:35,uploads_LABEL_14408952868026_20250924_113844.pdf,1
+24-09-2025,Mridul Murali,9840279399,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,1.44E+13,C698,c1fee67d8fc1,9/24/2025 12:37,uploads_LABEL_14408952822656_20250924_102821.pdf,1
+24-09-2025,Arun Joshi,9820357890,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,76606016211,A1177,cbddabd9c00c,9/24/2025 12:37,uploads_MF_EDA92F248584465FB127605243773D36_Proship_20250920_114633_1.pdf,1
+25-09-2025,Ishani,8454080976,Portable Air Purifier_Cloud White_Personalised,AT0006,1,76607622604,A1204,b0d5be75f2d4,9/25/2025 14:10,uploads_76607622604.pdf,1
+26-09-2025,Alice Mary Topno,7303221684,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,76609540560,A979,067f75e0007a,9/26/2025 12:17,uploads_76609540560_merged_1.pdf,1
+26-09-2025,girish,9941933022,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,76609546801,A968,1afb43b3022a,9/26/2025 12:17,uploads_76609540560_merged_1.pdf,2
+26-09-2025,Rehena,6003712759,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.44E+13,A975,cce799c385f9,9/26/2025 12:17,uploads_76609540560_merged_1.pdf,3
+26-09-2025,Stella Kalra,7055111111,atovio Pebble- Portable Air Purifier_Blush Pink,AT0004,1,1.44E+13,D0186,147e82da08de,9/26/2025 12:17,uploads_76609540560_merged_1.pdf,4
+27-09-2025,Ramgopal K,9848184404,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.91E+13,A1081,256f12f4f7e2,9/27/2025 11:43,uploads_invoice-label-AbKL2-zSt.pdf,1
+27-09-2025,Harshil Suvarnkar,9819050035,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,1.91E+13,C719,1b4f926ada1c,9/27/2025 11:43,uploads_invoice-label-4bdWGjB_G.pdf,1
+27-09-2025,Alice Mary Topno,7303221684,Black Metallic Chain,AT0022,1,1.91E+13,AT0022,52d47c7f331e,9/27/2025 12:20,uploads_invoice-label-5UnSMdkTh.pdf,1
+,,,Silver Metallic Chain,,1,,CONFIRMED_EXTRA,41d48916ad61,9/27/2025 12:20,uploads_invoice-label-5UnSMdkTh.pdf,2
+,,,HSN: 71171990,,1,,CONFIRMED_EXTRA,e92f15a5cf13,9/27/2025 12:20,uploads_invoice-label-5UnSMdkTh.pdf,2
+,,,3%,,1,,CONFIRMED_EXTRA,bfff417e7b11,9/27/2025 12:20,uploads_invoice-label-5UnSMdkTh.pdf,2
+,,,0.03,,1,,CONFIRMED_EXTRA,c195dfaf6ef5,9/27/2025 12:20,uploads_invoice-label-5UnSMdkTh.pdf,2
+,,,Amount in Words: One Rupee Only,,1,,CONFIRMED_EXTRA,396d23321e3e,9/27/2025 12:20,uploads_invoice-label-5UnSMdkTh.pdf,2
+27-09-2025,Teleios design,8879945525,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,60,90242165436,"A1245,A1211,A1168,A1110,A1192,A1023,A1225,A1186,A1216,A1068,A1144,A1246,A1196,A1175,A1094,A1062,A1065,A1121,A1002,A1233,A1161,A1243,A1080,A1195,A1185,A1227,A1151,A1220,A1006,A1112,A1019,A1244,A1132,A1217,A1240,A1210,A1235,A1187,A1170,A1230,A1134,A1103,A990,A1214,A1118,A1152,A1208,A1237,A1188,A1228,A1111,A1222,A1052,A996,A985,A1000,A1155,A1093,A989,A1221",fac8ab292512,9/27/2025 15:18,uploads_LABEL_90242165436_20250927_151040_2.pdf,1
+29-09-2025,Smriti Sah,7705888281,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.91E+13,A011,2afd3592a8ef,9/29/2025 10:38,uploads_invoice-label-vVIo3yVKX.pdf,1
+30-09-2025,Annie,9803343455,atovio Pebble- Portable Air Purifier_Blush Pink,AT0004,1,1.91E+13,D0233,7cc7c9581ff6,9/30/2025 11:16,uploads_invoice-label-0tqGiNnSs.pdf,1
+,,,Atovio Pebble (Blush Pink),,1,,CONFIRMED_EXTRA,66cc32b41991,9/30/2025 11:16,uploads_invoice-label-0tqGiNnSs.pdf,2
+,,,HSN: 84213920,,1,,CONFIRMED_EXTRA,f40e6447ee86,9/30/2025 11:16,uploads_invoice-label-0tqGiNnSs.pdf,2
+,,,0.15,,1,,CONFIRMED_EXTRA,7f5e03cdd661,9/30/2025 11:16,uploads_invoice-label-0tqGiNnSs.pdf,2
+30-09-2025,Ajay Shukla,7011889470,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,1.91E+13,C737,9a61319c22f8,9/30/2025 11:16,uploads_invoice-label-aKXUrnNDA.pdf,1
+30-09-2025,Rajeev Kumar Bansal,8879943444,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.91E+13,A1142,8e66e0547271,9/30/2025 11:17,uploads_invoice-label-vzrL5EV4a.pdf,1
+29-09-2025,Sandeep Kumar,9560988108,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,78027100314,A1139,1d00feec3439,9/30/2025 11:20,uploads_78027100314.pdf,1
+01-10-2025,Shishir Urdhwareshe,8085210619,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.91E+13,A1113,be24d32baa64,10-01-2025 10:59,uploads_des.pdf,1
+01-10-2025,SYED Shujatulla HUSSAINI,7506106646,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,1.91E+13,C743,a5a8b56a7a0e,10-01-2025 10:59,uploads_des.pdf,3
+01-10-2025,Chanchal kumar jain kumar jain,9433031636,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,78029853565,C730,e7092fce330f,10-01-2025 10:59,uploads_78029853565.pdf,1
+,,,,,,,CONFIRMED_EXTRA,dd9ae7890bf6,10-01-2025 11:00,uploads_123109164508020362.pdf,2
+01-10-2025,Bhaumik Piyushkumar Shah,9920060568,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,90246420176,B0269,bcc9fb8ebcb2,10-01-2025 11:00,uploads_LABEL_90246420176_20251001_105316.pdf,1
+01-10-2025,Vishal Malviya,9022415060,Atovio Pebble_Moonlight Black,,1,90246416794,CONFIRMED_EXTRA,7eda5920fc43,10-01-2025 11:01,uploads_LABEL_90246416794_20251001_105203.pdf,1
+01-10-2025,Vishal Malviya,9022415060,AT0001`,,1,90246416794,CONFIRMED_EXTRA,7bec24102e93,10-01-2025 11:01,uploads_LABEL_90246416794_20251001_105203.pdf,1
+01-10-2025,Yogesh ahire,7709397717,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.91E+13,A1256,52d2bb6f288d,01-10-2025 17:28,uploads_LABEL_19108910855735_20251001_170618.pdf,1
+03-10-2025,Vaishali MP,9920463114,atovio Pebble- Portable Air Purifier_Blush Pink,AT0004,1,1.91E+13,D0155,3.83E+11,03-10-2025 10:37,uploads_invoice-label-WH6M43zSr.pdf,1
+03-10-2025,Reshma GK,8971232640,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,1.91E+13,C727,9771629baad9,03-10-2025 10:37,uploads_invoice-label-WH6M43zSr.pdf,2
+03-10-2025,Ajay Chadha,9810364403,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,SF2184766173PRZ,A1055,a641dc285ab1,03-10-2025 10:37,uploads_invoice-label-WH6M43zSr.pdf,3
+03-10-2025,Dharmender Kumar,9999111145,atovio Pebble- Portable Air Purifier_Moonlight Black,AT0001,1,1.91E+13,C739,1bc2eb49d686,03-10-2025 10:37,uploads_invoice-label-WH6M43zSr.pdf,4
+03-10-2025,Dharmender Kumar,9999111145,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.91E+13,A1262,cd28cdfdc342,03-10-2025 10:37,uploads_invoice-label-WH6M43zSr.pdf,4
+03-10-2025,Shankar R,7043311034,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,90248321461,B0394,44cd02f4291f,03-10-2025 10:52,uploads_LABEL_90248321461_20251003_104235_2.pdf,1
+03-10-2025,AARYAN Toppo,8292379315,Atovio Pebble_cloud white,AT0006,1,90248332005,B0474,f5113e9016d3,03-10-2025 10:52,uploads_LABEL_90248321461_20251003_104235_2.pdf,2
+04-10-2025,RAGHURAM Raghuram,9945219639,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.91E+13,CONFIRMED_EXTRA,572b52c1ae32,04-10-2025 10:43,uploads_invoice-label-qy3eQ2YQ9.pdf,1
+04-10-2025,Dr Uday,9945911672,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,2,1.91E+13,"Axxxx,Axxxy",d254534ddfd6,04-10-2025 10:43,uploads_invoice-label-qy3eQ2YQ9.pdf,2
+04-10-2025,Veda Ramnani,9898989080,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,1.44E+13,Axxxx,5f0925851ad5,04-10-2025 10:43,uploads_invoice-label-qy3eQ2YQ9.pdf,3
+04-10-2025,Praduman Rapria,9599707807,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,2,SF2184765528PRZ,"Bxxxx,Bxxxy",ff7e01098d57,04-10-2025 10:43,uploads_invoice-label-qy3eQ2YQ9.pdf,4
+09-10-2025,Shubham Moondhara,9831033867,atovio Pebble- Portable Air Purifier_Blush Pink,AT0004,4,76634293223,,17d1708b3d34,2025-10-09 11:52:03,uploads_0910_1.pdf,1
+09-10-2025,DeepaM pattanayak,9900009902,atovio Pebble- Portable Air Purifier_Blush Pink,AT0004,1,80916208262,,73c369d9f087,2025-10-09 11:52:03,uploads_0910_1.pdf,2
+09-10-2025,Harcharan .,9831195601,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,80916208553,B544,e89c7f9887e5,2025-10-09 11:52:03,uploads_0910_1.pdf,3
+09-10-2025,Shridhar chitale,9911100444,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,78042237685,B550,a6ab2af94a62,2025-10-09 11:52:03,uploads_0910_1.pdf,4
+09-10-2025,Dr.lovee Mehrotra,9335904659,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,78042237991,,3c2cac4269fa,2025-10-09 11:52:03,uploads_0910_1.pdf,5
+09-10-2025,Dr. Swapnil Gawali,9890292321,Personalised atovio Pebble- Portable Air Purifier,AT0006,1,90256673905,,2e7b13534368,2025-10-09 11:52:03,uploads_0910_1.pdf,6
+09-10-2025,nivay Singh,8556099999,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,78042238912,,09890fc47d22,2025-10-09 11:52:03,uploads_0910_1.pdf,7
+09-10-2025,Nishant k,9821215864,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,90256674605,,5440b6ce5103,2025-10-09 11:52:03,uploads_0910_1.pdf,8
+09-10-2025,Rajrajeshwar Prasad Singh Chandel,9831006812,atovio Pebble- Portable Air Purifier_Blush Pink,AT0004,2,76634298742,,39526252ecf4,2025-10-09 11:52:03,uploads_0910_1.pdf,9
+09-10-2025,Rajrajeshwar Prasad Singh Chandel,9831006812,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,76634298742,,66cbc49bdf55,2025-10-09 11:52:03,uploads_0910_1.pdf,9
+09-10-2025,Rajrajeshwar Prasad Singh Chandel,9831006812,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,4,76634298742,,1ec34c87ec93,2025-10-09 11:52:03,uploads_0910_1.pdf,9
+09-10-2025,Shreedhar .,9448367433,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,90256675423,,2e6c6a3d78be,2025-10-09 11:52:03,uploads_0910_1.pdf,10
+09-10-2025,Marina gangmei,9999730284,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,2,76634300853,,0967868e103a,2025-10-09 11:52:03,uploads_0910_1.pdf,11
+09-10-2025,Marina gangmei,9999730284,Round Neck Strap,AT0020,2,76634300853,,6b2cd037b0cb,2025-10-09 11:52:03,uploads_0910_1.pdf,11
+09-10-2025,Ashok Mirchandani,9619611961,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,90256676812,,573214362778,2025-10-09 11:52:03,uploads_0910_1.pdf,12
+09-10-2025,Saurabh lakhani,9819993018,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,90256677114,,0c8ac36b7ae4,2025-10-09 11:52:03,uploads_0910_1.pdf,13
+09-10-2025,Samrat Yadav,9910001327,Round Neck Strap,AT0020,1,76634303126,,9ced0715fed8,2025-10-09 11:52:03,uploads_0910_1.pdf,14
+09-10-2025,Samrat Yadav,9910001327,Personalised atovio Pebble- Portable Air Purifier,AT0006,1,76634303126,,995224f8fad1,2025-10-09 11:52:03,uploads_0910_1.pdf,14
+09-10-2025,Swati Bhushan Sharma,9811943651,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,76634303933,,b8e63d201ee1,2025-10-09 11:52:03,uploads_0910_1.pdf,15
+09-10-2025,Niranjan M R,9148659836,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,90256678293,,2582211d491e,2025-10-09 11:52:03,uploads_0910_1.pdf,16
+09-10-2025,Sam Brar,9041200577,atovio Pebble- Portable Air Purifier_Sky blue,AT0002,1,76634305252,,91484daa3f39,2025-10-09 11:52:03,uploads_0910_1.pdf,17
+09-10-2025,Himanshu Kulshreshtha,9560246830,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,76634306545,,970a30ae5399,2025-10-09 11:52:03,uploads_0910_1.pdf,18
+09-10-2025,Rajesh Karira,9326058325,atovio Pebble- Portable Air Purifier_Blush Pink,AT0004,1,80916212403,,14a051edc6fe,2025-10-09 11:52:03,uploads_0910_1.pdf,19
+09-10-2025,azrafatima .,9100319283,atovio Pebble- Portable Air Purifier_Cloud White,AT0003,1,80916212591,,1c00715c5302,2025-10-09 11:52:03,uploads_0910_1.pdf,20

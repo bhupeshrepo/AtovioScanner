@@ -237,15 +237,24 @@ def assign_barcode(barcode: str, active_awb: str | None = None) -> Tuple[bool, D
 
 
 # ---------- Manual confirm for NO-SKU rows ----------
-def confirm_extra(row_id: str) -> Tuple[bool, str, int]:
+def confirm_extra(row_id: str, product_id: str = "") -> Tuple[bool, str, int]:
     row_id = _norm(row_id)
-    if not row_id: return False, "row_id required", 400
+    product_id = _norm(product_id)
+    if not row_id:
+        return False, "row_id required", 400
+
     rows = _read_all()
     for r in rows:
         if _norm(r.get("row_id","")) == row_id:
+            # Only allowed for no-SKU rows
             if _norm(r.get("sku","")):
                 return False, "Not a no-SKU row", 409
-            r["product_id"] = "CONFIRMED_EXTRA"
+
+            # Save provided product_id if any; else mark as confirmed sentinel
+            r["product_id"] = product_id if product_id else "CONFIRMED_EXTRA"
+
             _write_all(rows)
-            return True, "Confirmed and hidden", 200
+            return True, "Confirmed", 200
+
     return False, "row_id not found", 404
+

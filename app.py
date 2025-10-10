@@ -265,11 +265,15 @@ def confirm_extra_route():
         payload = request.get_json(force=True, silent=False)
     except Exception:
         return _json_error("Invalid JSON payload", 400)
+
     row_id = (payload or {}).get("row_id", "").strip()
-    ok, msg, status = confirm_extra(row_id)
+    product_id = (payload or {}).get("product_id", "").strip()
+
+    ok, msg, status = confirm_extra(row_id, product_id)
     if not ok:
         return _json_error(msg, status)
     return jsonify({"ok": True, "message": msg})
+
 
 
 if __name__ == "__main__":

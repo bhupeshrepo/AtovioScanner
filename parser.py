@@ -11,13 +11,34 @@
 # -----------------------------------------------------------------------------
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import List, Dict, Any, Tuple  # <-- ensure Tuple is imported
 import fitz  # PyMuPDF
+# parser.py (top of file)
+import json, os, re
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _load_sku_map():
+    path = os.path.join(BASE_DIR, "skus.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            m = json.load(f) or {}
+        # normalize keys to AT0000 form
+        out = {}
+        for k, v in m.items():
+            kk = re.sub(r"[^A-Za-z0-9]", "", k.upper())
+            # pad trailing digits to 4 (AT0001)
+            m2 = re.match(r"^([A-Z]+)(\d+)$", kk)
+            if m2:
+                out[f"{m2.group(1)}{m2.group(2).zfill(4)}"] = v
+            else:
+                out[kk] = v
+        return out
+    except Exception:
+        return {}
 
 # ---------------- Canonical SKU -> product_name ----------------
-SKU_CANON = {
+SKU_CANON = _load_sku_map() or {
     "AT0001": "atovio Pebble- Portable Air Purifier_Moonlight Black",
     "AT0002": "atovio Pebble- Portable Air Purifier_Sky blue",
     "AT0003": "atovio Pebble- Portable Air Purifier_Cloud White",
@@ -27,22 +48,32 @@ SKU_CANON = {
     "AT0022": "Black Metallic Chain",
 }
 
+def clean_line(s: str) -> str:
+    """Strip zero-width chars, quotes/backticks, collapse spaces."""
+    if not s:
+        return ""
+    s = re.sub(r"[\u200B-\u200D\uFEFF]", "", s)     # zero-width
+    s = s.replace("`", "").replace("´", "").replace("’", "").replace("‘", "").replace('"', "")
+    s = re.sub(r"[ \t]+", " ", s).strip()
+    return s
+
 def normalize_sku(raw: str) -> str:
     """
-    Normalize SKUs like AT0003 -> AT003, AT03 -> AT003, case-insensitive.
-    Keeps only A-Z0-9, then left-pads numeric tail to 3 digits if present.
+    Normalize SKU like 'AT1', 'AT0001', 'at0001`' -> 'AT0001'.
+    Removes all non-alphanumerics before matching.
     """
-    s = re.sub(r"[^A-Za-z0-9]", "", (raw or "").upper())
-    m = re.match(r"^([A-Z]+)(\d+)$", s)
+    if not raw:
+        return ""
+    s = clean_line(raw).upper()
+    s = re.sub(r"[^A-Z0-9]", "", s)  # <- THIS fixes the backtick / punctuation case
+    m = re.match(r"^([A-Z]+)(\d{1,6})$", s)
     if not m:
-        return s
+        return ""
     prefix, digits = m.groups()
-    # cap at 3 digits for our map
-    if len(digits) >= 4:
-        tail = digits[-4:]
-    else:
-        tail = digits.zfill(4)
-    return f"{prefix}{tail}"
+    # pad to 4 for AT-series (adjust if you have other families)
+    if prefix.startswith("AT"):
+        return f"AT{digits.zfill(4)}"
+    return f"{prefix}{digits}"
 
 def name_from_sku(raw: str) -> str:
     sk = normalize_sku(raw)
@@ -325,6 +356,7 @@ def parse_labels_from_pdf(pdf_path: str):
 
     for p in range(len(doc)):
         t = doc.load_page(p).get_text("text")
+        # print(t)
         lines = [(ln or "").strip() for ln in t.splitlines()]
         if not any(lines):
             continue

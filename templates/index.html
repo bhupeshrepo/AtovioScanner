@@ -38,6 +38,12 @@
     .sku-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
     .divider{opacity:.6;margin:0 6px}
     .btn-icon{border:1px solid var(--line);background:var(--pill);border-radius:8px;padding:4px 8px;cursor:pointer}
+    .pid-input{
+    background:#000; color:#fff; border:1px solid #000;
+    border-radius:6px; padding:6px 8px; width:160px;
+    }
+    .pid-input::placeholder{ color:#aaa; }
+
   </style>
 </head>
 <body>
@@ -66,7 +72,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" style="display:none;">
     <div class="row">
       <input id="search" type="text" placeholder="Search customer / SKU / product / AWB" style="flex:1"/>
       <label class="muted"><input type="checkbox" id="onlyAwb"/> Show only Active AWB</label>
@@ -309,7 +315,7 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
     tbNo.innerHTML = '';
     for(const row of noSku){
       // hide confirmed extras
-      if ((row.product_id||'').trim() === 'CONFIRMED_EXTRA') continue;
+      if ((row.product_id||'').trim() !== '') continue;
       const tr = document.createElement('tr');
       if(ACTIVE_AWB && row.awb===ACTIVE_AWB) tr.classList.add('active');
       tr.innerHTML = `
@@ -319,7 +325,7 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
         <td>${row.product_name||''}</td>
         <td>${row.quantity||''}</td>
         <td>${row.awb||''}</td>
-        <td>${row.product_id||''}</td>
+        <td><input class="pid-input" type="text" placeholder="optional ID" value="${row.product_id||''}"></td>
         <td><button class="btn-icon" data-rowid="${row.row_id}">✅</button></td>`;
       tbNo.appendChild(tr);
     }
@@ -327,19 +333,26 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
 
     // wire confirm buttons
     tbNo.querySelectorAll('button.btn-icon').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const id = btn.getAttribute('data-rowid');
-        try{
-          const res = await fetch('/confirm_extra', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({row_id: id})
-          });
-          const j = await safeJSON(res);
-          if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
-          setStatus('Confirmed extra ✓'); await refresh(true);
-        }catch(err){ alert('Confirm failed: ' + err.message); }
+  btn.addEventListener('click', async ()=>{
+    const id = btn.getAttribute('data-rowid');
+    const tr = btn.closest('tr');
+    const pidInput = tr ? tr.querySelector('input.pid-input') : null;
+    const product_id = pidInput ? (pidInput.value || '').trim().toUpperCase() : '';
+
+    try{
+      const res = await fetch('/confirm_extra', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ row_id: id, product_id })
       });
-    });
+      const j = await safeJSON(res);
+      if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+      setStatus('Confirmed extra ✓');
+      await refresh(true);
+    }catch(err){
+      alert('Confirm failed: ' + err.message);
+    }
+  });
+});
   }
 
   // Upload
