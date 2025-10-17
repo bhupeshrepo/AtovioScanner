@@ -123,12 +123,10 @@ def assign_product_id(awb: str, product_id: str):
 
 # ---------- Barcode assignment (multi-qty; devices unique; loose not unique) ----------
 PRIMARY_SKUS = {"AT0001","AT0002","AT0003","AT0004"}
-LOOSE_SKUS   = {"AT0020","AT0021","AT0022"}  # now scannable & kept in with-SKU table
+LOOSE_SKUS   = {"AT0020","AT0021","AT0022","AT0100", "AT0101", "AT0102", "AT0103", "AT0104", "AT0105", "AT0150", "AT0151", "AT0200"}  # now scannable & kept in with-SKU table
 
-_BARCODE_RX_PRIMARY = re.compile(r"^\s*([A-Za-z]{2,}\d+)\s*-\s*([A-Za-z])\s*(\d{1,3})\s*$")
-_BARCODE_RX_GENERIC = re.compile(r"^\s*([A-Za-z]{2,}\d+)\s*-\s*([A-Za-z0-9]{1,10})\s*$")
-_BARCODE_RX_PRIMARY = re.compile(r"^\s*([A-Za-z]{2,}\d+)\s*-\s*([A-Za-z])\s*(\d{1,3})\s*$")
-_BARCODE_RX_GENERIC = re.compile(r"^\s*([A-Za-z]{2,}\d+)\s*-\s*([A-Za-z0-9]{1,10})\s*$")
+_BARCODE_RX_PRIMARY = re.compile(r"^\s*([A-Za-z]+[0-9]{4})\s*-\s*([A-Za-z])\s*([0-9]{1,4})\s*$")
+_BARCODE_RX_GENERIC = re.compile(r"^\s*([A-Za-z]{2,}\d+)(?:\s*-\s*([A-Za-z0-9]{1,10}))?\s*$")
 _BARCODE_RX_SKUONLY = re.compile(r"^\s*([A-Za-z]{2,}\d+)\s*$")  # e.g., AT0020
 
 def _parse_barcode(code: str) -> Tuple[bool, str | Tuple[str, str], int]:
@@ -173,9 +171,62 @@ def _contact_group_units(rows: List[Dict[str, str]], contact: str) -> Tuple[int,
         done  += _row_done_units(r)
     return done, total
 
+# ---------- ORDER-LOCK STATE (stick to one order, finish SKU first) ----------
+import json
+
+ORDER_STATE_PATH = os.path.join(os.path.dirname(__file__), "order_state.json")
+
+def _state_load() -> Dict[str, Any]:
+    try:
+        if os.path.exists(ORDER_STATE_PATH):
+            with open(ORDER_STATE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"active_order": None, "active_sku": None}
+
+def _state_save(state: Dict[str, Any]) -> None:
+    tmp = ORDER_STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+    os.replace(tmp, ORDER_STATE_PATH)
+
+def _order_id_of(row: Dict[str, Any]) -> str:
+    # Treat contact_number as the "order id" (your grouping/printing already uses it)
+    return _norm(row.get("contact_number", ""))
+
+def _row_remaining_units(row: Dict[str, Any]) -> int:
+    return max(0, _row_qty(row) - _row_done_units(row))
+
+def _order_rows(rows: List[Dict[str, Any]], order_id: str) -> List[Dict[str, Any]]:
+    return [r for r in rows if _order_id_of(r) == order_id and _norm(r.get("sku",""))]
+
+def _pending_skus_in_order(rows: List[Dict[str, Any]], order_id: str) -> List[str]:
+    # Deterministic order: by first appearance in file, then SKU code as tiebreaker
+    seen = {}
+    for r in rows:
+        if _order_id_of(r) != order_id: 
+            continue
+        sku = _normalize_sku_for_db(r.get("sku",""))
+        if not sku: 
+            continue
+        rem = _row_remaining_units(r)
+        if rem > 0 and sku not in seen:
+            seen[sku] = True
+    # retain first-seen order; fallback to sorted for stability if needed
+    return list(seen.keys())
+
+def _first_pending_row_for_sku(rows: List[Dict[str, Any]], order_id: str, sku_4d: str) -> Dict[str, Any] | None:
+    for r in rows:
+        if _order_id_of(r) == order_id and _normalize_sku_for_db(r.get("sku","")) == sku_4d:
+            if _row_remaining_units(r) > 0:
+                return r
+    return None
+
 def assign_barcode(barcode: str, active_awb: str | None = None) -> Tuple[bool, Dict[str, Any] | str, int]:
     ok, parsed, status = _parse_barcode((barcode or "").upper())
-    if not ok: return False, parsed, status
+    if not ok: 
+        return False, parsed, status
     sku_4d, pid = parsed
 
     rows = _read_all()
@@ -185,44 +236,113 @@ def assign_barcode(barcode: str, active_awb: str | None = None) -> Tuple[bool, D
     if not is_loose and _product_id_exists_anywhere(pid, rows):
         return False, f"Barcode {pid} already assigned", 409
 
-    # Candidates: SKU matches, units remaining
-    cand = []
-    for r in rows:
-        if _normalize_sku_for_db(r.get("sku","")) != sku_4d: continue
-        if _row_remaining_units(r) <= 0: continue
-        cand.append(r)
-    if active_awb:
+    # Load current lock (order + sku)
+    state = _state_load()
+    active_order = state.get("active_order")
+    active_sku   = state.get("active_sku")
+
+    # Build candidates that match incoming SKU and still need units
+    cand = [r for r in rows 
+            if _normalize_sku_for_db(r.get("sku","")) == sku_4d 
+            and _row_remaining_units(r) > 0]
+
+    # If caller specified AWB and we're not locked yet, narrow to that AWB
+    if active_awb and not active_order:
         awb = _norm(active_awb)
         cand = [r for r in cand if _norm(r.get("awb","")) == awb]
+
     if not cand:
-        suffix = f" under AWB {active_awb}" if active_awb else ""
+        suffix = f" under AWB {active_awb}" if (active_awb and not active_order) else ""
         return False, f"No unassigned unit for SKU {sku_4d}{suffix}", 404
 
-    # Prefer single-row, qty=1 contacts first (by ROWS; all SKUs count)
-    sku_rows = [r for r in rows if _norm(r.get("sku",""))]
-    cnt_by_contact = Counter(_norm(r["contact_number"]) for r in sku_rows)
-    singles = [r for r in cand if cnt_by_contact[_norm(r["contact_number"])] == 1 and _row_qty(r) == 1]
-    target = singles[0] if singles else cand[0]
+    # --------------------------
+    # ORDER-LOCKED TARGETING
+    # --------------------------
+    target = None
+    if active_order:
+        # Stick to this order no matter what AWB says now
+        pending_skus = _pending_skus_in_order(rows, active_order)
 
-    # Append PID (even for loose; may repeat)
+        if not pending_skus:
+            # Order done -> clear lock
+            state["active_order"] = None
+            state["active_sku"] = None
+            _state_save(state)
+        else:
+            # If active_sku still pending, keep it; else go to next pending SKU
+            next_sku = active_sku if (active_sku in pending_skus) else pending_skus[0]
+
+            # Enforce: we only accept scans for the current SKU of the locked order.
+            # If the scanned SKU doesn't match the expected SKU, reject with guidance.
+            if sku_4d != next_sku:
+                msg = (f"Finish current order first. Expected SKU {next_sku} for contact "
+                       f"{active_order}; scanned {sku_4d}.")
+                return False, msg, 409
+
+            # Pick the first pending row for that SKU within the locked order
+            target = _first_pending_row_for_sku(rows, active_order, next_sku)
+            if target:
+                # Update lock in case we advanced SKU
+                state["active_sku"] = next_sku
+                _state_save(state)
+
+    # If no lock or no target from lock, fall back to your existing rule and acquire lock
+    if target is None:
+        # Keep your existing single-row, qty=1 preference
+        sku_rows = [r for r in rows if _norm(r.get("sku",""))]
+        cnt_by_contact = Counter(_norm(r["contact_number"]) for r in sku_rows)
+        singles = [r for r in cand if cnt_by_contact[_norm(r["contact_number"])] == 1 and _row_qty(r) == 1]
+        target = singles[0] if singles else cand[0]
+
+        # Acquire lock on this order+SKU
+        state["active_order"] = _norm(target.get("contact_number",""))
+        state["active_sku"]   = _normalize_sku_for_db(target.get("sku",""))
+        _state_save(state)
+
+    # --------------------------
+    # Append PID
+    # --------------------------
     pids = _pid_list(target.get("product_id",""))
     pids.append(pid)
     target["product_id"] = _pid_list_to_str(pids)
     _write_all(rows)
 
+    # --------------------------
+    # Progress + lock rollover
+    # --------------------------
     contact = _norm(target["contact_number"])
     done, total = _contact_group_units(rows, contact)
     group_complete = (total > 0 and done >= total)
 
+    # If active order is set and belongs to this target, advance SKU or release
+    state = _state_load()
+    if state.get("active_order") == contact:
+        pending_skus = _pending_skus_in_order(rows, contact)
+        if not pending_skus:
+            # Whole order done -> release
+            state["active_order"] = None
+            state["active_sku"] = None
+        else:
+            # If current active_sku finished, move to the next one
+            if state.get("active_sku") not in pending_skus:
+                state["active_sku"] = pending_skus[0]
+        _state_save(state)
+
     # pick the group's page+file (assume same page/file for all rows in a label)
-    src = ""
-    page = ""
+    src = ""; page = ""
     if group_complete:
         grp_rows = [r for r in rows if _norm(r.get("contact_number","")) == contact and _norm(r.get("sku",""))]
         if grp_rows:
-            # prefer target's own values; fallback to first row in group
             src = _norm(target.get("source_file","")) or _norm(grp_rows[0].get("source_file",""))
             page = _norm(target.get("page_index","")) or _norm(grp_rows[0].get("page_index",""))
+
+    # Optional hint for the UI: what to scan next (SKU-level)
+    next_hint = None
+    st2 = _state_load()
+    if st2.get("active_order"):
+        pend = _pending_skus_in_order(rows, st2["active_order"])
+        if pend:
+            next_hint = {"contact_number": st2["active_order"], "sku": pend[0]}
 
     payload = {
         "message": f"Assigned {pid} → {sku_4d}",
@@ -231,10 +351,10 @@ def assign_barcode(barcode: str, active_awb: str | None = None) -> Tuple[bool, D
         "awb": _norm(target.get("awb","")),
         "row_progress": {"scanned": _row_done_units(target), "qty": _row_qty(target)},
         "group_progress": {"scanned": done, "qty": total},
-        "print_info": {"source_file": src, "page_index": page} if (group_complete and src and page) else None
+        "print_info": {"source_file": src, "page_index": page} if (group_complete and src and page) else None,
+        "next_expected": next_hint
     }
     return True, payload, 200
-
 
 # ---------- Manual confirm for NO-SKU rows ----------
 def confirm_extra(row_id: str, product_id: str = "") -> Tuple[bool, str, int]:

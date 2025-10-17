@@ -46,6 +46,15 @@ SKU_CANON = _load_sku_map() or {
     "AT0020": "Round Neck Strap",
     "AT0021": "Black Metallic Chain",
     "AT0022": "Silver Metallic Chain",
+    "AT0100": "Strips (Black, P-10)",
+    "AT0101": "Strips (Black, P-20)",
+    "AT0102": "Strips (Black, P-30)",
+    "AT0103": "Strips (Trans, P-10)",
+    "AT0104": "Strips (Trans, P-20)",
+    "AT0105": "Strips (Trans, P-30)",
+    "AT0150": "Mask (Black)",
+    "AT0151": "Mask (Grey)",
+    "AT0200": "Filter (Pack of 10)"
 }
 
 def clean_line(s: str) -> str:
