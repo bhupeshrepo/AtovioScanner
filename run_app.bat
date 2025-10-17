@@ -6,8 +6,8 @@ REM Ensure we run from this script's directory
 cd /d "%~dp0"
 
 REM Activate the virtual environment (adjust folder name if needed)
-if exist "%~dp0env\Scripts\activate.bat" (
-  call "%~dp0env\Scripts\activate.bat"
+if exist "env\Scripts\activate.bat" (
+  call "env\Scripts\activate.bat"
 )
 
 REM Start Flask in a new console (so logs are visible)

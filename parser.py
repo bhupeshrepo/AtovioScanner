@@ -44,8 +44,8 @@ SKU_CANON = _load_sku_map() or {
     "AT0003": "atovio Pebble- Portable Air Purifier_Cloud White",
     "AT0004": "atovio Pebble- Portable Air Purifier_Blush Pink",
     "AT0020": "Round Neck Strap",
-    "AT0021": "Silver Metallic Chain",
-    "AT0022": "Black Metallic Chain",
+    "AT0021": "Black Metallic Chain",
+    "AT0022": "Silver Metallic Chain",
 }
 
 def clean_line(s: str) -> str:
