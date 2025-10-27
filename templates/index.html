@@ -6,8 +6,8 @@
   <title>atovio — Label Uploader</title>
   <link rel="icon" href="/static/logo.png">
   <style>
-    :root{ --bg:#ffffff; --card:#f7f8fa; --fg:#0b1020; --muted:#475569; --accent:#2563eb; --line:#e5e7eb; --pill:#eef2ff; --highlight:#edf2ff; --ok:#059669; --btnfg:#ffffff; }
-    [data-theme="dark"]{ --bg:#0b1020; --card:#121a2b; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --line:#243047; --pill:#0b1222; --highlight:#0b1b34; --ok:#10b981; --btnfg:#08111f; }
+    :root{ --bg:#ffffff; --card:#f7f8fa; --fg:#0b1020; --muted:#475569; --accent:#2563eb; --line:#e5e7eb; --pill:#eef2ff; --highlight:#edf2ff; --ok:#059669; --btnfg:#ffffff; --err:#b91c1c; }
+    [data-theme="dark"]{ --bg:#0b1020; --card:#121a2b; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --line:#243047; --pill:#0b1222; --highlight:#0b1b34; --ok:#10b981; --btnfg:#08111f; --err:#ef4444; }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
     header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--card)}
@@ -27,6 +27,7 @@
     .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--pill)}
     .muted{color:var(--muted);font-size:12px}
     .ok{color:var(--ok);font-weight:600}
+    .err{color:var(--err);font-weight:600}
     #status{min-height:18px}
     .board{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
     @media (min-width: 980px){ .board{grid-template-columns:1fr 1fr} }
@@ -38,12 +39,7 @@
     .sku-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
     .divider{opacity:.6;margin:0 6px}
     .btn-icon{border:1px solid var(--line);background:var(--pill);border-radius:8px;padding:4px 8px;cursor:pointer}
-    .pid-input{
-    background:#000; color:#fff; border:1px solid #000;
-    border-radius:6px; padding:6px 8px; width:160px;
-    }
-    .pid-input::placeholder{ color:#aaa; }
-
+    .toast{position:fixed;bottom:14px;right:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.15);display:none}
   </style>
 </head>
 <body>
@@ -67,12 +63,12 @@
     <div class="row" style="margin-top:10px">
       <div class="muted">Active AWB:</div>
       <div id="activeAwb" class="pill">—</div>
-      <input id="scan" type="text" placeholder="Scan here (AT0001-A001 for devices; AT0020 for loose; AWB also accepted)" style="flex:1"
+      <input id="scan" type="text" placeholder="Scan here (AT0001-A001 or AT0100 / AT0100-ABC; AWB optional)" style="flex:1"
              autocomplete="off" autocapitalize="off" spellcheck="false" autofocus />
     </div>
   </div>
 
-  <div class="card" style="display:none;">
+  <div class="card">
     <div class="row">
       <input id="search" type="text" placeholder="Search customer / SKU / product / AWB" style="flex:1"/>
       <label class="muted"><input type="checkbox" id="onlyAwb"/> Show only Active AWB</label>
@@ -89,7 +85,7 @@
       <table id="tblWith">
         <thead>
           <tr>
-            <th>order_date</th><th>customer_name</th><th>contact_number</th>
+            <th>order_date</th><th>order_id</th><th>customer_name</th><th>contact_number</th>
             <th>product_name</th><th>sku</th><th>quantity</th><th>awb</th><th>product_id</th><th></th>
           </tr>
         </thead>
@@ -98,11 +94,11 @@
     </div>
 
     <div class="card">
-      <h2>Extras (no SKU) <span id="countNo" class="badge">0</span></h2>
+      <h2>Extras (no SKU or NoScan) <span id="countNo" class="badge">0</span></h2>
       <table id="tblNo">
         <thead>
           <tr>
-            <th>order_date</th><th>customer_name</th><th>contact_number</th>
+            <th>order_date</th><th>order_id</th><th>customer_name</th><th>contact_number</th>
             <th>product_name</th><th>quantity</th><th>awb</th><th>product_id</th><th>Confirm</th>
           </tr>
         </thead>
@@ -112,16 +108,10 @@
   </div>
 </main>
 
-<script>
-const printerEl = document.getElementById('printerName');
-const savePrinterBtn = document.getElementById('savePrinter');
-function getPrinter(){ return (localStorage.getItem('printerName') || '').trim(); }
-function setPrinter(v){ localStorage.setItem('printerName', (v||'').trim()); }
-printerEl.value = getPrinter();
-savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); alert('Printer saved'); });
+<div id="toast" class="toast"></div>
 
+<script>
 (function(){
-  
   // ---------- THEME ----------
   const themeBtn = document.getElementById('themeBtn');
   function setTheme(t){
@@ -133,8 +123,9 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
   themeBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); setTheme((localStorage.getItem('theme')||'light')==='light'?'dark':'light'); });
   themeBtn.addEventListener('keydown', (e)=> e.preventDefault());
 
-  // ---------- UI/NET ----------
+  // ---------- UI refs ----------
   const statusEl = document.getElementById('status');
+  const toastEl = document.getElementById('toast');
   const pdfEl = document.getElementById('pdf');
   const uploadBtn = document.getElementById('uploadBtn');
   const downloadXlsxBtn = document.getElementById('downloadXlsxBtn');
@@ -144,16 +135,135 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
   const searchEl = document.getElementById('search');
   const onlyAwbEl = document.getElementById('onlyAwb');
   const showAssignedEl = document.getElementById('showAssigned');
+  const printerEl = document.getElementById('printerName');
+  const savePrinterBtn = document.getElementById('savePrinter');
 
   const tbWith = document.querySelector('#tblWith tbody');
   const tbNo   = document.querySelector('#tblNo tbody');
   const skuLine = document.getElementById('skuLine');
   const countNo   = document.getElementById('countNo');
 
+  let LOCKED_CONTACT = null;
+  let SKIP_LOCK = false;
+
+  // ---------- Helpers ----------
+  function focusScanner(){ if (scanEl) { scanEl.focus(); scanEl.select && scanEl.select(); } }
+  function setStatus(msg, isErr){ statusEl.textContent = msg || ''; statusEl.className = isErr ? 'err' : 'muted'; }
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.style.display = 'block';
+    setTimeout(()=> toastEl.style.display = 'none', 1800);
+  }
+  focusScanner();
+
+  function showLockWarning(expectedList) {
+  return new Promise(resolve => {
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.top = 0;
+    overlay.style.left = 0;
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.background = 'rgba(0,0,0,0.4)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = 9999;
+
+    // Modal card
+    const box = document.createElement('div');
+    box.style.background = 'var(--card)';
+    box.style.border = '1px solid var(--line)';
+    box.style.borderRadius = '12px';
+    box.style.padding = '20px';
+    box.style.width = '380px';
+    box.style.boxShadow = '0 8px 24px rgba(0,0,0,.25)';
+    box.style.textAlign = 'center';
+    box.innerHTML = `
+      <div style="font-size:15px;font-weight:600;margin-bottom:10px;color:var(--err)">⚠️ Pending SKUs</div>
+      <div style="font-size:14px;margin-bottom:16px;">
+        The following SKUs are still pending for this order:<br/>
+        <strong>${expectedList.join(', ')}</strong><br/><br/>
+        Please scan these first before proceeding.
+      </div>
+    `;
+
+    // Buttons
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.margin = '0 8px';
+    btnCancel.className = 'secondary';
+    btnCancel.style.background = 'var(--accent)';
+    btnCancel.style.color = 'var(--btnfg)';
+
+    const btnSkip = document.createElement('button');
+    btnSkip.textContent = 'Skip for now';
+    btnSkip.style.margin = '0 5px';
+    btnSkip.style.background = 'var(--pill)';
+    btnSkip.style.color = 'var(--fg)';
+
+    // Button order: Cancel first, Skip second
+    const btnWrap = document.createElement('div');
+    btnWrap.style.marginTop = '8px';
+    btnWrap.appendChild(btnCancel);
+    btnWrap.appendChild(btnSkip);
+    box.appendChild(btnWrap);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    // Focus Cancel by default
+    setTimeout(() => btnCancel.focus(), 50);
+
+    // Button actions
+    btnCancel.addEventListener('click', () => {
+      document.body.removeChild(overlay);
+      resolve(false); // user canceled
+    });
+    btnSkip.addEventListener('click', () => {
+      document.body.removeChild(overlay);
+      resolve(true); // user chose skip
+    });
+  });
+}
+
+  function getPrinter(){ return (localStorage.getItem('printerName') || '').trim(); }
+  function setPrinter(v){ localStorage.setItem('printerName', (v||'').trim()); }
+  printerEl.value = getPrinter();
+  savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); toast('Printer saved'); });
+
+  downloadXlsxBtn.addEventListener('click', ()=> window.location.href = '/download_xlsx?ts=' + Date.now());
+  downloadCsvBtn.addEventListener('click',  ()=> window.location.href = '/download_csv?ts=' + Date.now());
+
+  function isAwb(s){ return /^[A-Z0-9]{8,}$/i.test((s||'')); }
+  function isBarcode(s){
+    s = (s||'').trim().toUpperCase();
+    return (
+      /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z]\s*\d{1,4}\s*$/.test(s) ||     // device: AT0001-A001 or AT0001-A0001
+      /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z0-9]{1,10}\s*$/.test(s) ||      // loose with token
+      /^\s*[A-Za-z]{2,}\d+\s*$/.test(s)                                 // loose bare
+    );
+  }
+
+  function normSku(s){ return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+
+  async function safeJSON(res){
+    // Prevents HTML error pages from crashing the UI
+    let text = '';
+    try { text = await res.text(); } catch { return {ok:false, error:'Network error'}; }
+    try { return JSON.parse(text); }
+    catch {
+      // Last resort: show generic message, keep UI intact
+      return {ok:false, error: text ? ('Server error ('+res.status+'): '+text.slice(0,120)+'…') : ('HTTP '+res.status)};
+    }
+  }
+
+showLockWarning
+
   let DATA = [];
   let ACTIVE_AWB = "";
 
-  // Colors mapping
+  // Colors mapping (add more SKUs here if desired)
   const COLOR_BY_SKU = {
     AT0001: {name:'Black',   style:'background:#000'},
     AT0002: {name:'Blue',    style:'background:#2563eb'},
@@ -161,65 +271,25 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
     AT0004: {name:'Pink',    style:'background:#ffc0cb'},
     AT0020: {name:'Black',   style:'background:#000'},
     AT0021: {name:'Gradient black', style:'background:linear-gradient(45deg,#000,#333)'},
-    AT0022: {name:'Silver',  style:'background:#c0c0c0'}
+    AT0022: {name:'Silver',  style:'background:#c0c0c0'},
+    AT0100: {name:'Black',   style:'background:#000'},
+    AT0101: {name:'Black',   style:'background:#111'},
+    AT0102: {name:'Black',   style:'background:#222'},
+    AT0103: {name:'Trans',   style:'background:linear-gradient(45deg,#eee,#fff)'},
+    AT0104: {name:'Trans',   style:'background:linear-gradient(45deg,#f5f5f5,#fff)'},
+    AT0105: {name:'Trans',   style:'background:linear-gradient(45deg,#fafafa,#fff)'},
+    AT0150: {name:'Black Mask', style:'background:#000'},
+    AT0151: {name:'Grey Mask',  style:'background:#9ca3af'},
+    AT0200: {name:'Filter',     style:'background:#d1d5db'}
   };
   const PRIMARY_SKUS = ['AT0001','AT0002','AT0003','AT0004'];
 
-  function focusScanner(){ if (scanEl) { scanEl.focus(); scanEl.select && scanEl.select(); } }
-  focusScanner();
-
-  function setStatus(msg){ statusEl.textContent = msg || ''; }
-  function normSku(s){ return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
-  function isAwb(s){ return /^[A-Z0-9]{8,}$/i.test((s||'')); }
-  function isBarcode(s){
-    s = (s||'');
-    const primary = /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z]\s*\d{1,3}\s*$/;      // AT0001-A001
-    const generic = /^\s*[A-Za-z]{2,}\d+\s*-\s*[A-Za-z0-9]{1,10}\s*$/;       // AT0020-ABC123
-    const skuOnly = /^\s*(AT0020|AT0021|AT0022)\s*$/i;                        // bare loose SKUs
-    return primary.test(s) || generic.test(s) || skuOnly.test(s);
-  }
-
-  async function safeJSON(res){
-    const text = await res.text();
-    try { return JSON.parse(text); }
-    catch { return {ok:false, error: text || (res.status+' '+res.statusText)}; }
-  }
-
-  async function refresh(noCache){
-    try{
-      const url = noCache ? '/data?ts='+Date.now() : '/data';
-      const res = await fetch(url, {cache:'no-store'});
-      const j = await safeJSON(res);
-      if(!res.ok){ throw new Error(j.error || ('HTTP '+res.status)); }
-      DATA = j;
-      renderTables();
-      setStatus(`Loaded ${DATA.length} rows.`);
-    }catch(err){
-      console.error(err);
-      setStatus('Load failed: ' + err.message);
-    } finally {
-      focusScanner();
-    }
-  }
-
-  function matchesSearch(row, q){
-    if(!q) return true;
-    q = q.toLowerCase();
-    return (
-      (row.customer_name||'').toLowerCase().includes(q) ||
-      (row.product_name||'').toLowerCase().includes(q) ||
-      (row.sku||'').toLowerCase().includes(q) ||
-      (row.awb||'').toLowerCase().includes(q) ||
-      (row.contact_number||'').toLowerCase().includes(q)
-    );
-  }
-
-  // --------- Units progress ----------
   function qtyOf(row){ const n = parseInt((row.quantity||'').toString().trim(),10); return Number.isFinite(n)?n:0; }
   function scannedOf(row){ const p=(row.product_id||'').trim(); return p? p.split(',').filter(Boolean).length : 0; }
 
   function buildGroupMaps(rows){
-    const skuRows = rows.filter(r => (r.sku||'').trim() !== '');
+    // Only rows with SKU and sku_type != NoScan
+    const skuRows = rows.filter(r => (r.sku||'').trim() !== '' && r.sku_type !== 'NoScan');
     const totalUnits = new Map();
     const scannedUnits  = new Map();
     for(const r of skuRows){
@@ -249,7 +319,6 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
     }
     return totals;
   }
-
   function renderSkuChips(totals){
     const present = Array.from(totals.keys());
     const prim = PRIMARY_SKUS.filter(s => present.includes(s));
@@ -257,8 +326,7 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
     function chip(sku){
       const val = totals.get(sku) || 0;
       const color = COLOR_BY_SKU[sku]?.style || 'background:#999';
-      const title = COLOR_BY_SKU[sku]?.name || 'colour';
-      return `<span class="chip" title="${title}">
+      return `<span class="chip" title="${COLOR_BY_SKU[sku]?.name || 'colour'}">
                 <span class="sq" style="${color}"></span>
                 ${sku}: ${val}
               </span>`;
@@ -266,6 +334,36 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
     const primHtml = prim.map(chip).join('');
     const extraHtml = extra.length ? `<span class="divider">|</span>` + extra.map(chip).join('') : '';
     skuLine.innerHTML = primHtml + extraHtml;
+  }
+
+  async function refresh(noCache){
+    try{
+      const url = noCache ? '/data?ts='+Date.now() : '/data';
+      const res = await fetch(url, {cache:'no-store'});
+      const j = await safeJSON(res);
+      if(!res.ok || j.ok === false){ throw new Error(j.error || ('HTTP '+res.status)); }
+      DATA = j;
+      renderTables();
+      setStatus(`Loaded ${DATA.length} rows.`);
+    }catch(err){
+      console.error(err);
+      setStatus('Load failed: ' + err.message, true);
+      toast('Load failed');
+    } finally {
+      focusScanner();
+    }
+  }
+
+  function matchesSearch(row, q){
+    if(!q) return true;
+    q = q.toLowerCase();
+    return (
+      (row.customer_name||'').toLowerCase().includes(q) ||
+      (row.product_name||'').toLowerCase().includes(q) ||
+      (row.sku||'').toLowerCase().includes(q) ||
+      (row.awb||'').toLowerCase().includes(q) ||
+      (row.contact_number||'').toLowerCase().includes(q)
+    );
   }
 
   function renderTables(){
@@ -281,13 +379,14 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
     const maps = buildGroupMaps(filtered);
     const visible = filtered.filter(r => !groupComplete(r.contact_number, maps));
 
-    const withSku = visible.filter(r => (r.sku||'').trim() !== '');
-    const noSku   = visible.filter(r => (r.sku||'').trim() === '');
+    // Split by sku_type
+    const withSku = visible.filter(r => (r.sku||'').trim() !== '' && r.sku_type !== 'NoScan');
+    const extras  = visible.filter(r => r.sku_type === 'NoScan' || (r.sku||'').trim() === '');
 
     // SKU totals line
     renderSkuChips(calcSkuUnitTotals(withSku));
 
-    // LEFT: with SKU rows
+    // LEFT
     tbWith.innerHTML = '';
     for(const row of withSku){
       const tr = document.createElement('tr');
@@ -300,6 +399,7 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
       if(!showAssigned && rowDone && groupComplete(row.contact_number, maps)){ continue; }
       tr.innerHTML = `
         <td>${row.order_date||''}</td>
+        <td>${row.order_id||''}</td>
         <td>${row.customer_name||''}</td>
         <td>${row.contact_number||''}</td>
         <td>${row.product_name||''}</td>
@@ -311,51 +411,50 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
       tbWith.appendChild(tr);
     }
 
-    // RIGHT: no SKU — add confirm button
+    // RIGHT
     tbNo.innerHTML = '';
-    for(const row of noSku){
-      // hide confirmed extras
-      if ((row.product_id||'').trim() !== '') continue;
+    for(const row of extras){
+      if ((row.product_id||'').trim() === 'CONFIRMED_EXTRA') continue; // hide already confirmed
       const tr = document.createElement('tr');
       if(ACTIVE_AWB && row.awb===ACTIVE_AWB) tr.classList.add('active');
       tr.innerHTML = `
         <td>${row.order_date||''}</td>
+        <td>${row.order_id||''}</td>
         <td>${row.customer_name||''}</td>
         <td>${row.contact_number||''}</td>
         <td>${row.product_name||''}</td>
         <td>${row.quantity||''}</td>
         <td>${row.awb||''}</td>
-        <td><input class="pid-input" type="text" placeholder="optional ID" value="${row.product_id||''}"></td>
+        <td>${row.product_id||''}</td>
         <td><button class="btn-icon" data-rowid="${row.row_id}">✅</button></td>`;
       tbNo.appendChild(tr);
     }
     countNo.textContent = tbNo.querySelectorAll('tr').length;
 
-    // wire confirm buttons
+    // wire confirm buttons with safe error handling
     tbNo.querySelectorAll('button.btn-icon').forEach(btn=>{
-  btn.addEventListener('click', async ()=>{
-    const id = btn.getAttribute('data-rowid');
-    const tr = btn.closest('tr');
-    const pidInput = tr ? tr.querySelector('input.pid-input') : null;
-    const product_id = pidInput ? (pidInput.value || '').trim().toUpperCase() : '';
-
-    try{
-      const res = await fetch('/confirm_extra', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ row_id: id, product_id })
+      btn.addEventListener('click', async ()=>{
+        const id = btn.getAttribute('data-rowid');
+        try{
+          const res = await fetch('/confirm_extra', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({row_id: id})
+          });
+          const j = await safeJSON(res);
+          if(!res.ok || j.ok === false){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+          setStatus('Confirmed extra ✓');
+          toast('Confirmed ✓');
+          await refresh(true);
+        }catch(err){
+          console.error(err);
+          setStatus('Confirm failed: ' + err.message, true);
+          toast('Confirm failed');
+        }
       });
-      const j = await safeJSON(res);
-      if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
-      setStatus('Confirmed extra ✓');
-      await refresh(true);
-    }catch(err){
-      alert('Confirm failed: ' + err.message);
-    }
-  });
-});
+    });
   }
 
-  // Upload
+  // Upload (robust error handling)
   uploadBtn.addEventListener('click', async ()=>{
     const f = pdfEl.files && pdfEl.files[0];
     if(!f){ alert('Choose a PDF'); return; }
@@ -364,96 +463,124 @@ savePrinterBtn.addEventListener('click', ()=> { setPrinter(printerEl.value); ale
     try{
       const res = await fetch('/upload', {method:'POST', body:fd});
       const j = await safeJSON(res);
-      if(!res.ok || !j.ok){ throw new Error(j.error || ('HTTP '+res.status)); }
+      if(!res.ok || j.ok === false){ throw new Error(j.error || ('HTTP '+res.status)); }
       setStatus(`Parsed: ${j.parsed}, Added: ${j.added}.`);
+      toast('Parsed ✓');
       await refresh(true);
     }catch(err){
       console.error(err);
-      setStatus('Upload failed: ' + err.message);
+      setStatus('Upload failed: ' + err.message, true);
+      toast('Upload failed');
+    } finally {
+      focusScanner();
     }
   });
 
-  // Scanner (swallow Enter; keep focus)
+  // Scanner (swallow Enter; keep focus; strong error handling)
   scanEl.addEventListener('keydown', async (e)=>{
-  if(e.key !== 'Enter') return;
-  e.preventDefault(); e.stopPropagation();
+    if(e.key !== 'Enter') return;
+    e.preventDefault(); e.stopPropagation();
 
-  const code = e.target.value.trim(); e.target.value = '';
-  if(!code) { return; }
+    const code = e.target.value.trim(); e.target.value = '';
+    if(!code) return;
 
-  // BARCODE
-  if(isBarcode(code)){
-    try{
-      const res = await fetch('/assign_barcode', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ barcode: code, awb: (window.ACTIVE_AWB || null) })
-      });
-      const j = await safeJSON(res);
-      if(!res.ok || !j.ok){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
+    if (LOCKED_CONTACT && !SKIP_LOCK) {
+    // Fetch pending SKUs for current locked contact
+    const res = await fetch(`/pending_skus/${encodeURIComponent(LOCKED_CONTACT)}`);
+    const j = await res.json();
 
-      setStatus(j.message || 'Assigned');
-
-      // >>> NEW: auto-print the page when the whole label (incl. loose items) is complete
-      // After: setStatus(j.message || 'Assigned');
-
-if (j.group_complete && j.print_info && j.print_info.source_file && j.print_info.page_index) {
-  const printer = getPrinter();
-  if (printer) {
-    // SILENT server-side print to the specific printer
-    try{
-      const pr = await fetch('/label_print_silent', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          source: j.print_info.source_file,
-          page:   parseInt(j.print_info.page_index, 10),
-          printer
-        })
-      });
-      const pj = await safeJSON(pr);
-      if (!pr.ok || !pj.ok) throw new Error(pj.error || pj.message || ('HTTP '+pr.status));
-      setStatus(`Printed → ${printer}`);
-    }catch(err){
-      console.error(err);
-      // Fallback: open the print page (will show dialog)
-      const url = `/label_print?source=${encodeURIComponent(j.print_info.source_file)}&page=${encodeURIComponent(j.print_info.page_index)}`;
-      window.open(url, '_blank');
-      setStatus('Silent print failed; opened print dialog instead');
+    // Build set of SKUs still pending for that contact
+    const pending = j.pending_skus || [];
+    if (pending.length > 0) {
+    const scannedSku = code.match(/^([A-Z]{2,}\d+)/)?.[1] || "";
+    const expected = pending.filter(s => s !== scannedSku);
+    if (expected.length > 0) {
+      // Show warning modal
+      const skip = await showLockWarning(expected);
+    if (skip){
+      SKIP_LOCK = true; // allow next scan
+      toast('Order skipped temporarily');
+    } else {
+      setStatus('Scan pending SKUs first', true);
+      toast('Scan pending SKUs');
     }
-  } else {
-    // No printer configured: open normal print tab (dialog)
-    const url = `/label_print?source=${encodeURIComponent(j.print_info.source_file)}&page=${encodeURIComponent(j.print_info.page_index)}`;
-    window.open(url, '_blank');
+    return;
+
+    }
   }
 }
 
-      // <<< NEW END
+    // BARCODE
+    if(isBarcode(code)){
+      try{
+        const res = await fetch('/assign_barcode', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ barcode: code, awb: (window.ACTIVE_AWB || null) })
+        });
+        const j = await safeJSON(res);
+        if(!res.ok || j.ok === false){ throw new Error(j.error || j.message || ('HTTP '+res.status)); }
 
-      await refresh(true);
-    }catch(err){
-      console.error(err);
-      setStatus('Barcode assign failed: ' + err.message);
-      alert('Barcode assign failed: ' + err.message);
+        setStatus(j.message || 'Assigned');
+        toast('Scan ✓');
+        LOCKED_CONTACT = j.contact_number || null;
+        SKIP_LOCK = false; // reset any skip mode
+
+        // Auto-print on completion
+        if (j.group_complete && j.print_info && j.print_info.source_file && j.print_info.page_index) {
+          const printer = getPrinter();
+          if (printer) {
+            try{
+              const pr = await fetch('/label_print_silent', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ source: j.print_info.source_file, page: parseInt(j.print_info.page_index,10), printer })
+              });
+              const pj = await safeJSON(pr);
+              if (!pr.ok || pj.ok === false) throw new Error(pj.error || pj.message || ('HTTP '+pr.status));
+              setStatus(`Printed → ${printer}`);
+              toast('Printed ✓');
+            }catch(err){
+              console.error(err);
+              // Fallback: open print page (dialog)
+              const url = `/label_print?source=${encodeURIComponent(j.print_info.source_file)}&page=${encodeURIComponent(j.print_info.page_index)}`;
+              window.open(url, '_blank');
+              setStatus('Silent print failed; opened print dialog instead', true);
+              toast('Print dialog opened');
+            }
+          } else {
+            const url = `/label_print?source=${encodeURIComponent(j.print_info.source_file)}&page=${encodeURIComponent(j.print_info.page_index)}`;
+            window.open(url, '_blank');
+          }
+        }
+
+        await refresh(true);
+      }catch(err){
+        console.error(err);
+        setStatus('Barcode assign failed: ' + err.message, true);
+        toast('Scan failed');
+      }
+      return;
     }
-    return;
-  }
 
-  // AWB
-  if(isAwb(code)){
-    window.ACTIVE_AWB = code.toUpperCase();
-    activeAwbEl.textContent = window.ACTIVE_AWB || '—';
-    await refresh(true);
-    return;
-  }
+    // AWB
+    if(isAwb(code)){
+      window.ACTIVE_AWB = code.toUpperCase();
+      activeAwbEl.textContent = window.ACTIVE_AWB || '—';
+      await refresh(true);
+      toast('AWB set');
+      return;
+    }
 
-  setStatus('Not an AWB or barcode');
-});
-
+    setStatus('Not an AWB or barcode', true);
+    toast('Invalid code');
+  });
 
   // Filters
   ;[onlyAwbEl, showAssignedEl].forEach(el => { if(el){ el.addEventListener('change', renderTables); }});
   searchEl.addEventListener('input', renderTables);
+
+  // Keep scanner focused
+  window.addEventListener('click', (e)=> { if (e.target !== scanEl) setTimeout(focusScanner, 0); });
 
   // Init
   refresh(true);

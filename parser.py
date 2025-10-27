@@ -1,314 +1,296 @@
 # parser.py
-# -----------------------------------------------------------------------------
-# Extracts: order_date, customer_name, contact_number, product_name, sku,
-#           quantity, awb, product_id("")
-#
-# Fixes:
-# - Stronger segmentation: split on Proship footer, 2nd PREPAID/COD, or 2nd AWB.
-# - Contact number is chosen near DELIVERY ADDRESS, not global.
-# - Canonical product_name from SKU map; SKU normalization (AT0003 -> AT003).
-# - product_id ALWAYS "" (filled later when scanning barcode).
-# -----------------------------------------------------------------------------
+# -----------------------------------------------
+# PDF → rows extractor for atovio labels.
+# Rules:
+#  - 1 label == 1 PDF PAGE (primary rule)
+#  - Fallback: if a page happens to contain >1 label, split inside the page
+#    by "Powered By Proship"
+#  - Extracts: order_date, customer_name, contact_number, product_name, sku,
+#              quantity, awb, page_index (1-based)
+#  - Product names are canonicalized from SKU master (if present)
+# -----------------------------------------------
+
 from __future__ import annotations
-
+from typing import List, Dict, Any, Tuple
 from datetime import datetime
-from typing import List, Dict, Any, Tuple  # <-- ensure Tuple is imported
-import fitz  # PyMuPDF
-# parser.py (top of file)
-import json, os, re
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+import fitz
+import re
+import os
 
-def _load_sku_map():
-    path = os.path.join(BASE_DIR, "skus.json")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            m = json.load(f) or {}
-        # normalize keys to AT0000 form
-        out = {}
-        for k, v in m.items():
-            kk = re.sub(r"[^A-Za-z0-9]", "", k.upper())
-            # pad trailing digits to 4 (AT0001)
-            m2 = re.match(r"^([A-Z]+)(\d+)$", kk)
-            if m2:
-                out[f"{m2.group(1)}{m2.group(2).zfill(4)}"] = v
-            else:
-                out[kk] = v
-        return out
-    except Exception:
-        return {}
+# --- Page delimiter fallback token ---
+ORDER_END_TOKEN = "powered by proship"  # case-insensitive check
 
-# ---------------- Canonical SKU -> product_name ----------------
-SKU_CANON = _load_sku_map() or {
-    "AT0001": "atovio Pebble- Portable Air Purifier_Moonlight Black",
-    "AT0002": "atovio Pebble- Portable Air Purifier_Sky blue",
-    "AT0003": "atovio Pebble- Portable Air Purifier_Cloud White",
-    "AT0004": "atovio Pebble- Portable Air Purifier_Blush Pink",
-    "AT0020": "Round Neck Strap",
-    "AT0021": "Black Metallic Chain",
-    "AT0022": "Silver Metallic Chain",
-    "AT0100": "Strips (Black, P-10)",
-    "AT0101": "Strips (Black, P-20)",
-    "AT0102": "Strips (Black, P-30)",
-    "AT0103": "Strips (Trans, P-10)",
-    "AT0104": "Strips (Trans, P-20)",
-    "AT0105": "Strips (Trans, P-30)",
-    "AT0150": "Mask (Black)",
-    "AT0151": "Mask (Grey)",
-    "AT0200": "Filter (Pack of 10)"
-}
-
-def clean_line(s: str) -> str:
-    """Strip zero-width chars, quotes/backticks, collapse spaces."""
-    if not s:
-        return ""
-    s = re.sub(r"[\u200B-\u200D\uFEFF]", "", s)     # zero-width
-    s = s.replace("`", "").replace("´", "").replace("’", "").replace("‘", "").replace('"', "")
-    s = re.sub(r"[ \t]+", " ", s).strip()
-    return s
-
-def normalize_sku(raw: str) -> str:
-    """
-    Normalize SKU like 'AT1', 'AT0001', 'at0001`' -> 'AT0001'.
-    Removes all non-alphanumerics before matching.
-    """
-    if not raw:
-        return ""
-    s = clean_line(raw).upper()
-    s = re.sub(r"[^A-Z0-9]", "", s)  # <- THIS fixes the backtick / punctuation case
-    m = re.match(r"^([A-Z]+)(\d{1,6})$", s)
-    if not m:
-        return ""
-    prefix, digits = m.groups()
-    # pad to 4 for AT-series (adjust if you have other families)
-    if prefix.startswith("AT"):
-        return f"AT{digits.zfill(4)}"
-    return f"{prefix}{digits}"
-
-def name_from_sku(raw: str) -> str:
-    sk = normalize_sku(raw)
-    return SKU_CANON.get(sk, "")
-
-# ---------------- Regexes ----------------
-ORDER_END_TOKEN = "powered by proship"   # case-insensitive prefix check
-PAYMENT_HEADER_RX = re.compile(
-    r"^(?:prepaid|cash\s+on\s+delivery|cod)(?:\s*\|\|\s*cod amount:.*)?$",
-    re.IGNORECASE
-)
+# --- Regexes for fields; made resilient to spacing/case variations ---
 DATE_LINE_RX = re.compile(
     r"order\s*date\s*[:\-]\s*(\d{4}-\d{2}-\d{2}|\d{2}[/-]\d{2}[/-]\d{4})",
     re.IGNORECASE
 )
-CONTACT_RX = re.compile(r"contact\s*number\s*:\s*([0-9]{6,})", re.IGNORECASE)
-AWB_RX = re.compile(r"courier\s*awb\s*no\s*:\s*([0-9A-Z/]+)", re.IGNORECASE)
+# Capture the first 10-digit number appearing after "Contact Number"
+CONTACT_RX = re.compile(
+    r"(?i)contact\s*number[^0-9]{0,20}(\d{10})"
+)
 
-HEADER_DESC = re.compile(r"^description\s*$", re.IGNORECASE)
-HEADER_SKU  = re.compile(r"^sku\s*$",         re.IGNORECASE)
-HEADER_QTY  = re.compile(r"^qty\s*$",         re.IGNORECASE)
-# SKUs like AT0001, AT021, AT22 (we'll normalize later)
-SKU_TOKEN_RX = re.compile(r"^[A-Z]{2,}[A-Z0-9]*\d{1,}$")
+ORDER_ID_RX = re.compile(r"(?i)order\s*id[^0-9]{0,10}(\d{4,5})")
 
-# Lines that end a Description block
-BREAKERS_PREFIX = tuple(s.lower() for s in [
-    "tracking id:", "order id:", "return address", "handover to",
-    "sold by:", "gstin:", "delivery address:", "courier awb no:",
-    "mode of shipping:", "total price:", ORDER_END_TOKEN
-])
+AWB_RX = re.compile(r"courier\s*awb\s*no\s*:\s*([A-Z0-9]+)", re.IGNORECASE)
 
-# ---------------- Utilities ----------------
+# --- Local SKU master loader (kept local to avoid circular import with db.py) ---
+MASTER_DIR = os.path.join(os.path.dirname(__file__), "data")
+SKU_MASTER_CSV = os.path.join(MASTER_DIR, "sku_master.csv")
+
+SKU_TOKEN_RX = re.compile(r"\b([A-Z]{2,}\s*\d{1,})\b")
+
+# Lightweight fallback when SKU line is missing but description hints colour/variant
+_DEF_SKU_FROM_DESC = [
+    ("moonlight black", "AT0001"),
+    ("sky blue",        "AT0002"),
+    ("cloud white",     "AT0003"),
+    ("blush pink",      "AT0004"),
+    # extend here if you want: ("transparent", "AT0103"), etc.
+]
+
+def _guess_sku_from_description(desc: str) -> str:
+    d = (desc or "").lower()
+    for needle, sku in _DEF_SKU_FROM_DESC:
+        if needle in d:
+            return sku
+    return ""
+
+def _sku_norm(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]", "", (s or "").upper())
+
+def _normalize_sku_for_db(s: str) -> str:
+    if not s:
+        return ""
+    s = s.strip().upper()
+    # --- Ignore non-real SKUs ---
+    if s == "NIL" or not s.startswith("AT"):
+        return ""
+    return s
+
+def _load_sku_master() -> Dict[str, Dict[str, str]]:
+    """
+    Returns: { SKU_NORM : {"name": <canonical name>, "type": "Compulsory"|"Loose"} }
+    We only need the name here; type is used in db.py during scanning.
+    """
+    m: Dict[str, Dict[str, str]] = {}
+    if os.path.exists(SKU_MASTER_CSV):
+        with open(SKU_MASTER_CSV, "r", encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                if i == 0 and "sku" in line.lower():
+                    continue  # header
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 3:
+                    continue
+                sku = parts[0]
+                typ = parts[-1]
+                name = ",".join(parts[1:-1]).strip()
+                m[_sku_norm(sku)] = {"name": name, "type": typ}
+    return m
+
+SKU_MASTER = _load_sku_master()
+
+def _canonical_name_for_sku(sku: str, fallback: str) -> str:
+    info = SKU_MASTER.get(_sku_norm(sku))
+    return info["name"] if (info and info.get("name")) else (fallback or "")
+
 def _norm_date(s: str) -> str:
-    s = s.strip()
+    s = (s or "").strip()
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
             return datetime.strptime(s, fmt).strftime("%d-%m-%Y")
         except ValueError:
-            pass
-    return s
-
-# ---------------- Segmentation (strong) ----------------
-def _segment_labels(lines_all: List[str]) -> List[List[str]]:
-    """
-    Segment using:
-      1) Proship footer -> boundary
-      2) 2nd payment header since last boundary -> boundary
-      3) 2nd AWB since last boundary -> boundary
-    The triggering header/AWB line belongs to the *new* label.
-    """
-    orders: List[List[str]] = []
-    buf: List[str] = []
-    pay_seen = False
-    awb_seen = False
-
-    def flush():
-        nonlocal buf, pay_seen, awb_seen
-        if buf and any((ln or "").strip() for ln in buf):
-            orders.append(buf)
-        buf = []
-        pay_seen = False
-        awb_seen = False
-
-    for ln in lines_all:
-        raw = (ln or "")
-        low = raw.strip().lower()
-
-        # Proship footer -> hard split (footer belongs to old label)
-        if low.startswith(ORDER_END_TOKEN):
-            buf.append(raw)
-            flush()
             continue
+    return s  # leave as-is if unexpected
 
-        # Payment header ?
-        if PAYMENT_HEADER_RX.match(raw.strip()):
-            if pay_seen:
-                # start new label; move this header to new buffer
-                last = raw
-                flush()
-                buf.append(last)
-                pay_seen = True
-            else:
-                buf.append(raw)
-                pay_seen = True
-            continue
-
-        # AWB line ?
-        if AWB_RX.search(raw):
-            if awb_seen:
-                # second AWB before a footer -> split before this line
-                last = raw
-                flush()
-                buf.append(last)
-                awb_seen = True
-            else:
-                buf.append(raw)
-                awb_seen = True
-            continue
-
-        # default
-        buf.append(raw)
-
-    flush()
-    return orders
-
-# ---------------- Product block parsing ----------------
-def _parse_products_block(seg: List[str], start_idx: int) -> Tuple[List[Dict[str, Any]], int]:
+def _parse_product_block(lines: List[str], i: int) -> Tuple[List[Dict[str, Any]], int]:
     """
-    Stacked block:
-      name line
-      optional SKU line
-      qty line (digits)
-    Repeats until breaker or next header.
+    Robust 3-line row parser:
+      desc
+      sku?      (may be missing)
+      qty
+    - Searches up to the next 3 lines for SKU/qty.
+    - If SKU line is missing, tries _guess_sku_from_description(desc).
+    - NEVER emits a duplicate: if a SKU is found/guessed, we DO NOT also make a blank-SKU row.
+    - Advances i by exactly how many lines were consumed (2 or 3), not just +1.
     """
     items: List[Dict[str, Any]] = []
-    i = start_idx + 1
+    seen = set()
+    breakers = {
+        "tracking id:", "order id:", "return address", "handover to",
+        "sold by:", "gstin:", "prepaid", "cash on delivery", "delivery address:",
+        "courier awb no:", "mode of shipping:", "total price:", ORDER_END_TOKEN
+    }
 
-    # Skip header lines SKU/Qty within a small window
-    limit = min(start_idx + 6, len(seg))
-    while i < limit:
-        token = (seg[i] or "").strip()
-        if not token:
+    # Must begin at the header trio
+    if not (i + 2 < len(lines)
+            and lines[i].lower() == "description"
+            and lines[i+1].lower() == "sku"
+            and lines[i+2].lower() == "qty"):
+        return items, i
+
+    i += 3  # skip headers
+
+    def is_break(ln: str) -> bool:
+        low = (ln or "").strip().lower()
+        return (not low) or any(low.startswith(b) for b in breakers)
+
+    n = len(lines)
+    while i < n:
+        # Skip empties
+        while i < n and not (lines[i] or "").strip():
             i += 1
-            continue
-        if HEADER_SKU.match(token) or HEADER_QTY.match(token):
-            i += 1
-            continue
-        break
-
-    cur = {"name": None, "sku": "", "qty": None}
-
-    def finalize():
-        nonlocal cur
-        if cur["name"]:
-            # Canonicalize SKU and name
-            norm = normalize_sku(cur["sku"])
-            pname = name_from_sku(norm) or cur["name"]
-            items.append({
-                "product_name": pname,
-                "sku": norm,
-                "quantity": cur["qty"] if cur["qty"] is not None else 1
-            })
-        cur = {"name": None, "sku": "", "qty": None}
-
-    while i < len(seg):
-        token = (seg[i] or "").strip()
-        low = token.lower()
-
-        if not token:
-            i += 1
-            continue
-
-        # Block breaker?
-        if any(low.startswith(b) for b in BREAKERS_PREFIX) or HEADER_DESC.match(token):
+        if i >= n:
+            break
+        if is_break(lines[i]):
             break
 
-        # Qty-only line
-        if token.isdigit():
-            cur["qty"] = int(token)
-            finalize()
+        # Merge multi-line descriptions if next line looks like continuation
+        desc = (lines[i] or "").strip()
+        while (
+            i + 1 < n
+            and not is_break(lines[i + 1])
+            and not SKU_TOKEN_RX.search(lines[i + 1])  # not a SKU line
+            and not re.fullmatch(r"\d+", (lines[i + 1] or "").strip())  # not qty line
+            and len((lines[i + 1] or "").strip().split()) <= 3  # small trailing word(s)
+        ):
+            desc += " " + (lines[i + 1] or "").strip()
+            i += 1
+        # --- NEW FIX END ---
+
+        l1 = (lines[i + 1] or "").strip() if i + 1 < n else ""
+        l2 = (lines[i + 2] or "").strip() if i + 2 < n else ""
+
+        # Try detect SKU (in l1 first, else in window i..i+2)
+        sku = ""
+        used_sku_line = None
+        m = SKU_TOKEN_RX.search(l1)
+        if m:
+            sku = _normalize_sku_for_db(m.group(1))
+            used_sku_line = i+1
+        else:
+            for j in range(i, min(i+3, n)):
+                mm = SKU_TOKEN_RX.search((lines[j] or ""))
+                if mm:
+                    sku = _normalize_sku_for_db(mm.group(1))
+                    used_sku_line = j
+                    break
+
+        # Detect qty (prefer pure-digit line; else trailing integer)
+        qty = None
+        used_qty_line = None
+        for j in range(i, min(i+3, n)):
+            ln = (lines[j] or "").strip()
+            if re.fullmatch(r"\d+", ln):
+                qty = int(ln)
+                used_qty_line = j
+                break
+        if qty is None:
+            for j in range(i, min(i+3, n)):
+                ln = (lines[j] or "").strip()
+                mqty = re.search(r"\b(\d+)\b\s*$", ln)
+                if mqty:
+                    qty = int(mqty.group(1))
+                    used_qty_line = j
+                    break
+
+        # If SKU line is missing but desc suggests a variant, guess it
+        guessed = False
+        if not sku:
+            guessed_code = _guess_sku_from_description(desc)
+            if guessed_code:
+                sku = _normalize_sku_for_db(guessed_code)
+                guessed = True
+
+        # If we still have neither SKU nor qty, this isn't a row—advance safely by 1
+        if not sku and qty is None:
             i += 1
             continue
 
-        # SKU-only line
-        if SKU_TOKEN_RX.fullmatch(token):
-            cur["sku"] = token
+        if qty is None:
+            qty = 1  # defensible default
+
+        product = _canonical_name_for_sku(sku, desc)
+
+        key = (product, sku, qty)
+        # --- Optional safety addition ---
+        # Avoid ghost lines when a long description caused duplication
+        if not sku and "atovio" in desc.lower() and any(ch.isdigit() for ch in desc):
+            # Skip likely duplicate/no-SKU fragment line
             i += 1
             continue
+        # --- End optional safety addition ---
 
-        # Otherwise a product name
-        if cur["name"] and cur["qty"] is None:
-            # New name before qty -> assume previous qty=1
-            finalize()
-        cur["name"] = token
-        i += 1
+        # IMPORTANT: do NOT create a blank-SKU row if we've found/guessed a SKU.
+        if (sku or product) and key not in seen:
+            items.append({"product_name": product, "sku": sku, "quantity": qty})
+            seen.add(key)
 
-    # Flush tail
-    if cur["name"]:
-        finalize()
+        # Decide how many lines we consumed and advance exactly past them
+        consumed_end = i  # last index we should consume
+        # If we had a distinct SKU line, count it
+        if used_sku_line is not None:
+            consumed_end = max(consumed_end, used_sku_line)
+        # If we had a distinct qty line, count it
+        if used_qty_line is not None:
+            consumed_end = max(consumed_end, used_qty_line)
+        # If neither SKU nor qty line existed (e.g., desc + guessed SKU + qty on desc),
+        # we at least consumed desc; if qty was on l1, we consumed i+1, etc.
+        if used_sku_line is None and used_qty_line is None:
+            # Try to detect if l1 looked like qty to consume it too
+            if re.fullmatch(r"\d+", l1):
+                consumed_end = max(consumed_end, i+1)
+
+        # Move to the next line after what we consumed
+        i = consumed_end + 1
+
+        # Stop if next line is a breaker
+        if i < n and is_break(lines[i]):
+            break
 
     return items, i
 
-# ---------------- Order parsing ----------------
-def _contact_near_delivery(order_lines: List[str]) -> str:
-    """
-    Prefer the contact number that appears within a short window
-    *after* 'DELIVERY ADDRESS:' (common in your labels).
-    Fall back to first contact anywhere in the segment.
-    """
-    for idx, raw in enumerate(order_lines):
-        if (raw or "").strip().lower() == "delivery address:":
-            window = order_lines[idx: idx + 14]
-            for ln in window:
-                m = CONTACT_RX.search(ln or "")
-                if m:
-                    return m.group(1)
-            break
-    for ln in order_lines:
-        m = CONTACT_RX.search(ln or "")
-        if m:
-            return m.group(1)
-    return ""
-
 def _parse_single_order(order_lines: List[str]) -> List[Dict[str, Any]]:
+    """
+    Parse a single order's lines (everything before 'Powered By Proship').
+    Returns list of row dicts:
+      order_date, customer_name, contact_number, product_name, sku, quantity, awb
+    """
     rows: List[Dict[str, Any]] = []
     order_date = ""
     customer_name = ""
+    contact_number = ""
     awb = ""
-    contact_number = _contact_near_delivery(order_lines)
+    order_id = ""
 
-    # Date, AWB, name near Delivery Address
+    # Find fields
     for idx, raw in enumerate(order_lines):
         ln = (raw or "").strip()
         low = ln.lower()
 
-        m = DATE_LINE_RX.search(ln)
-        if m:
-            order_date = _norm_date(m.group(1)); continue
+        # Order Date
+        mdate = DATE_LINE_RX.search(ln)
+        if mdate:
+            order_date = _norm_date(mdate.group(1))
+            continue
+        
+        # Order ID
+        mid = ORDER_ID_RX.search(ln)
+        if mid:
+            order_id = mid.group(1)
+            continue
 
-        if not awb:
-            m = AWB_RX.search(ln)
-            if m:
-                awb = (m.group(1) or "").strip()
-                continue
+        # AWB
+        maw = AWB_RX.search(ln)
+        if maw:
+            awb = (maw.group(1) or "").strip()
+            continue
 
-        if low == "delivery address:" and not customer_name:
+        # Delivery Address -> next non-empty line is usually the name
+        if low == "delivery address:":
             j = idx + 1
             while j < len(order_lines) and not (order_lines[j] or "").strip():
                 j += 1
@@ -316,81 +298,101 @@ def _parse_single_order(order_lines: List[str]) -> List[Dict[str, Any]]:
                 customer_name = (order_lines[j] or "").strip()
             continue
 
-    # Parse all Description blocks in this order
+        # Contact Number
+        mcont = CONTACT_RX.search(ln)
+        if mcont:
+            num = mcont.group(1)
+            # Explicitly ignore our own office number
+            if num != "9996642108":
+                contact_number = num
+            continue
+
+    # Scan for product blocks
     i = 0
-    seen = set()
+    seen_in_order = set()  # (product, sku, qty) across ALL blocks
     while i < len(order_lines):
-        if HEADER_DESC.match((order_lines[i] or "").strip()):
-            items, j = _parse_products_block(order_lines, i)
+        if (order_lines[i] or "").strip().lower() == "description":
+            items, j = _parse_product_block(order_lines, i)
             for it in items:
                 key = (it["product_name"], it["sku"], it["quantity"])
-                if key in seen:
+                if key in seen_in_order:
                     continue
-                seen.add(key)
+                seen_in_order.add(key)
                 rows.append({
                     "order_date": order_date,
+                    "order_id": order_id,
                     "customer_name": customer_name,
                     "contact_number": contact_number,
                     "product_name": it["product_name"],
                     "sku": it["sku"],
                     "quantity": it["quantity"],
                     "awb": awb,
-                    "product_id": ""  # filled later by barcode scan
                 })
             i = j
         else:
             i += 1
 
-    if not rows:
-        rows.append({
-            "order_date": order_date,
-            "customer_name": customer_name,
-            "contact_number": contact_number,
-            "product_name": "",
-            "sku": "",
-            "quantity": "",
-            "awb": awb,
-            "product_id": ""
-        })
     return rows
 
-# ---------------- Public entrypoint ----------------
-def parse_labels_from_pdf(pdf_path: str):
+def parse_labels_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     """
-    Page-wise parsing: 1 page == 1 label.
-    Adds 'page_index' (1-based) to each row.
+    New logic: treat each PDF PAGE as a single label/order.
+    Still keeps a fallback: if a *single* page contains multiple labels,
+    we split that page by 'Powered By Proship' inside the page.
+    Adds page_index (1-based).
     """
     doc = fitz.open(pdf_path)
-    all_rows = []
+    all_rows: List[Dict[str, Any]] = []
 
     for p in range(len(doc)):
-        t = doc.load_page(p).get_text("text")
-        # print(t)
-        lines = [(ln or "").strip() for ln in t.splitlines()]
+        try:
+            t = doc.load_page(p).get_text("text")
+            print(t)
+        except Exception:
+            # If page text extraction fails, skip safely
+            continue
+
+        lines = [ (ln or "").strip() for ln in t.splitlines() ]
         if not any(lines):
             continue
 
-        # If a rare page has multiple labels separated by the footer, split
-        footer_hits = sum(1 for ln in lines if (ln or "").lower().startswith(ORDER_END_TOKEN))
-        segments = []
-        if footer_hits >= 2:
-            buf = []
-            for ln in lines:
-                buf.append(ln)
-                if (ln or "").lower().startswith(ORDER_END_TOKEN):
-                    if any((s or "").strip() for s in buf):
-                        segments.append(buf)
-                    buf = []
-            if buf and any(buf):
-                segments.append(buf)
-        else:
-            segments = [lines]
+        # Fallback: detect multiple labels in a single page
+        # --- Improved multi-order page splitter ---
+        # --- Improved multi-order page splitter ---
+        SPLIT_MARKERS = (
+            "powered by proship",
+            "handover to bluedart air",
+            "handover to bluedart",
+        )
 
+        segments: List[List[str]] = []
+        buf: List[str] = []
+
+        def is_split_marker(ln: str) -> bool:
+            low = (ln or "").strip().lower()
+            return any(low.startswith(m) for m in SPLIT_MARKERS)
+
+        for ln in lines:
+            buf.append(ln)
+            if is_split_marker(ln):
+                # end current order segment
+                if any((s or "").strip() for s in buf):
+                    segments.append(buf)
+                buf = []
+
+        # catch any trailing lines after last marker
+        if buf and any((s or "").strip() for s in buf):
+            segments.append(buf)
+
+        
         for seg in segments:
+            # Skip empty or incomplete sub-blocks (must contain an AWB)
+            if not any("awb" in (ln or "").lower() for ln in seg):
+                continue
             rows = _parse_single_order(seg)
-            # inject page_index for downstream print
             for r in rows:
-                r["page_index"] = str(p + 1)  # 1-based page
+                r["page_index"] = str(p + 1)  # 1-based
+                r["source_file"] = ""         # filled in app.py on upload
             all_rows.extend(rows)
 
     doc.close()
