@@ -1,9 +1,10 @@
 sku,product_name,type,display_name
-AT0001,atovio Pebble- Portable Air Purifier_Moonlight Black,Compulsory,Pebble: Black
-AT0002,atovio Pebble- Portable Air Purifier_Sky blue,Compulsory,Pebble: Blue
-AT0003,atovio Pebble- Portable Air Purifier_Cloud White,Compulsory,Pebble: White
-AT0004,atovio Pebble- Portable Air Purifier_Blush Pink,Compulsory,Pebble: Pink
-AT0006,Personalised atovio Pebble- Portable Air Purifier,Compulsory,Pebble: Custom
+AT0001,atovio Pebble- Portable Air Purifier_Moonlight Black,Loose,Pebble: Black
+AT0002,atovio Pebble- Portable Air Purifier_Sky blue,Loose,Pebble: Blue
+AT0003,atovio Pebble- Portable Air Purifier_Cloud White,Loose,Pebble: White
+AT0004,atovio Pebble- Portable Air Purifier_Blush Pink,Loose,Pebble: Pink
+AT0005,atovio Pebble- Portable Air Purifier_Lavender Mist,Loose,Pebble: Purple
+AT0006,Personalised atovio Pebble- Portable Air Purifier,Loose,Pebble: Custom
 AT0020,Round Neck Strap,Loose,Lanyard: Strap
 AT0021,Black Metallic Chain,Loose,Lanyard: Metal Blk
 AT0022,Silver Metallic Chain,Loose,Lanyard: Metal Sil
