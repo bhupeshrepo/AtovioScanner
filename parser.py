@@ -347,7 +347,7 @@ def parse_labels_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     for p in range(len(doc)):
         try:
             t = doc.load_page(p).get_text("text")
-            print(t)
+            # print(t)
         except Exception:
             # If page text extraction fails, skip safely
             continue

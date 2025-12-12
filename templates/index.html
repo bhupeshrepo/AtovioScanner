@@ -40,12 +40,93 @@
     .divider{opacity:.6;margin:0 6px}
     .btn-icon{border:1px solid var(--line);background:var(--pill);border-radius:8px;padding:4px 8px;cursor:pointer}
     .toast{position:fixed;bottom:14px;right:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.15);display:none}
+    /* -------------------------------------------------------
+   ATOVIO BUTTON SYSTEM — Brand Hover Animation
+   Uses brand gradient (Pastel Blue #B2D7FF → Dark Blue #031424)
+   ------------------------------------------------------- */
+
+button {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+
+/* Gradient Sweep Layer */
+button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, #B2D7FF, #031424);
+  opacity: 0;
+  transform: translateX(-60%);
+  transition: opacity .35s ease, transform .45s ease;
+  z-index: 1;
+}
+
+/* Lift + Soft Glow */
+button:hover {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 8px 24px rgba(3, 20, 36, 0.28); /* subtle navy shadow from brand */
+}
+
+/* Activate Gradient Sweep */
+button:hover::before {
+  opacity: .22;
+  transform: translateX(0);
+}
+
+/* Keep text on top of gradient */
+button > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* -------------------------------------------------------
+   SECONDARY BUTTONS
+   ------------------------------------------------------- */
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+
+/* Secondary hover effect (light outline glow + sweep) */
+button.secondary:hover {
+  border-color: #B2D7FF; /* pastel blue highlight from brand */
+  color: var(--fg);
+}
+
+/* -------------------------------------------------------
+   DISABLED STATE (optional)
+   ------------------------------------------------------- */
+
+button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+button:disabled::before {
+  display: none;
+}
+
   </style>
 </head>
 <body>
 <header>
   <img src="/static/logo.png" alt="logo"/><h1>atovio — Label Uploader & Scanner</h1>
   <div class="spacer"></div>
+    <!-- Flipkart button -->
+  <img 
+    id="flipkartBtn"
+    src="/static/fk_logo.png" 
+    alt="Flipkart"
+    style="width:100px;height:40px;cursor:pointer;margin-right:12px;"
+  />
   <button class="secondary" id="themeBtn" type="button" tabindex="-1" aria-label="Toggle theme">Dark Mode</button>
 </header>
 
@@ -70,9 +151,10 @@
 
   <div class="card">
     <div class="row">
-      <input id="search" type="text" placeholder="Search customer / SKU / product / AWB" style="flex:1"/>
-      <label class="muted"><input type="checkbox" id="onlyAwb"/> Show only Active AWB</label>
-      <label class="muted"><input type="checkbox" id="showAssigned"/> Show assigned rows</label>
+      <input id="search" type="text" placeholder="Search customer / SKU / product / AWB" style="flex:1 display:none"/>
+      <label class="muted" style="display:none"><input type="checkbox" id="onlyAwb"/> Show only Active AWB</label>
+      <label class="muted" style="display:none"><input type="checkbox" id="showAssigned"/> Show assigned rows</label>
+      <button id="bulkPrintBtn" class="secondary" type="button">Bulk Print</button>
     </div>
   </div>
 
@@ -130,6 +212,7 @@
   const uploadBtn = document.getElementById('uploadBtn');
   const downloadXlsxBtn = document.getElementById('downloadXlsxBtn');
   const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+  const bulkPrintBtn = document.getElementById('bulkPrintBtn');
   const scanEl = document.getElementById('scan');
   const activeAwbEl = document.getElementById('activeAwb');
   const searchEl = document.getElementById('search');
@@ -475,6 +558,135 @@ showLockWarning
       focusScanner();
     }
   });
+
+  async function openBulkPrintModal(){
+    try{
+      const res = await fetch('/bulk_print_options');
+      const j = await safeJSON(res);
+      if (!res.ok || j.ok === false) {
+        throw new Error(j.error || ('HTTP '+res.status));
+      }
+      const items = j.skus || [];
+      if (!items.length){
+        toast('No single-SKU orders available for bulk print');
+        return;
+      }
+
+      // Overlay
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = 0;
+      overlay.style.left = 0;
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.background = 'rgba(0,0,0,0.4)';
+      overlay.style.display = 'flex';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.zIndex = 9999;
+
+      // Modal card
+      const box = document.createElement('div');
+      box.style.background = 'var(--card)';
+      box.style.border = '1px solid var(--line)';
+      box.style.borderRadius = '12px';
+      box.style.padding = '18px';
+      box.style.width = '420px';
+      box.style.maxHeight = '480px';
+      box.style.boxShadow = '0 8px 24px rgba(0,0,0,.25)';
+      box.innerHTML = `
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Bulk Print</div>
+        <div class="muted" style="font-size:13px;margin-bottom:10px;">
+          Select a SKU to bulk-print all single-SKU labels (1 page per order).
+        </div>
+      `;
+
+      const listWrap = document.createElement('div');
+      listWrap.style.maxHeight = '260px';
+      listWrap.style.overflowY = 'auto';
+      listWrap.style.border = '1px solid var(--line)';
+      listWrap.style.borderRadius = '10px';
+      listWrap.style.padding = '6px 8px';
+      listWrap.style.marginBottom = '10px';
+
+      items.sort((a,b)=> (a.sku||'').localeCompare(b.sku||''));
+
+      for (const it of items){
+        const row = document.createElement('label');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+        row.style.fontSize = '13px';
+        row.style.padding = '4px 2px';
+        row.style.cursor = 'pointer';
+
+        row.innerHTML = `
+          <span>
+            <input type="radio" name="bulkSku" value="${it.sku}" style="margin-right:6px;"/>
+            <strong>${it.sku}</strong>
+            <span style="opacity:.7;margin-left:4px;">${it.product_name || ''}</span>
+          </span>
+          <span class="muted">${it.count} labels</span>
+        `;
+        listWrap.appendChild(row);
+      }
+
+      const btnRow = document.createElement('div');
+      btnRow.style.display = 'flex';
+      btnRow.style.justifyContent = 'flex-end';
+      btnRow.style.gap = '8px';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.className = 'secondary';
+
+      const printBtn = document.createElement('button');
+      printBtn.textContent = 'Print';
+      printBtn.style.background = 'var(--accent)';
+      printBtn.style.color = 'var(--btnfg)';
+
+      btnRow.appendChild(cancelBtn);
+      btnRow.appendChild(printBtn);
+
+      box.appendChild(listWrap);
+      box.appendChild(btnRow);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      cancelBtn.addEventListener('click', ()=>{
+        document.body.removeChild(overlay);
+        focusScanner();
+      });
+
+      printBtn.addEventListener('click', async ()=>{
+        const sel = overlay.querySelector('input[name="bulkSku"]:checked');
+        if (!sel){
+          toast('Select a SKU first');
+          return;
+        }
+        const sku = sel.value;
+        document.body.removeChild(overlay);
+
+        // Open bulk print window – backend will also mark rows as assigned
+        window.open('/bulk_label_print?sku=' + encodeURIComponent(sku), '_blank');
+
+        // Refresh table after a moment
+        setTimeout(()=> {
+          loadData().catch(console.error);
+        }, 1500);
+      });
+    }catch(err){
+      console.error(err);
+      toast('Bulk print failed');
+    }
+  }
+
+  if (bulkPrintBtn){
+    bulkPrintBtn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      openBulkPrintModal();
+    });
+  }
 
   // Scanner (swallow Enter; keep focus; strong error handling)
   scanEl.addEventListener('keydown', async (e)=>{

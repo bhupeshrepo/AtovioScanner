@@ -491,3 +491,145 @@ def confirm_extra(row_id: str) -> Tuple[bool, str, int]:
             _write_all(rows)
             return True, "Confirmed and hidden", 200
     return False, "row_id not found", 404
+
+def _group_labels_by_page(rows: List[Dict[str, Any]]):
+    """
+    Group rows by (source_file, page_index). Each group == 1 physical label.
+    """
+    groups: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for r in rows:
+        src = _norm(r.get("source_file", ""))
+        page = _norm(r.get("page_index", ""))
+        if not src or not page:
+            continue
+        key = (src, page)
+        if key not in groups:
+            groups[key] = {
+                "source_file": src,
+                "page_index": page,
+                "rows": []
+            }
+        groups[key]["rows"].append(r)
+    return groups
+
+
+def bulk_single_sku_summary() -> List[Dict[str, Any]]:
+    """
+    Returns one entry per SKU:
+      { sku, product_name, count } where count = number of
+      labels that are:
+        - single-SKU (ignoring NoScan SKUs)
+        - not fully assigned yet.
+    """
+    rows = _read_all()
+    groups = _group_labels_by_page(rows)
+    acc: Dict[str, Dict[str, Any]] = {}
+
+    for g in groups.values():
+        rows_g = g["rows"]
+
+        # Collect distinct non-NoScan SKUs on this label
+        sku_set = set()
+        for r in rows_g:
+            raw = r.get("sku", "")
+            sku_norm = _normalize_sku_for_db(raw)
+            if not sku_norm:
+                continue
+            if _sku_type(sku_norm) == "NoScan":
+                continue  # ignore extras
+            sku_set.add(sku_norm)
+
+        if len(sku_set) != 1:
+            continue  # not single-SKU
+
+        only_sku = next(iter(sku_set))
+
+        # Find the main row for this SKU
+        sku_rows = [r for r in rows_g if _normalize_sku_for_db(r.get("sku", "")) == only_sku]
+        if not sku_rows:
+            continue
+        row = sku_rows[0]
+
+        qty = _row_qty(row)
+        done = _row_done_units(row)
+        if qty <= 0 or done >= qty:
+            continue  # already fully assigned or invalid qty
+
+        entry = acc.setdefault(only_sku, {
+            "sku": only_sku,
+            "product_name": row.get("product_name", ""),
+            "count": 0,
+        })
+        entry["count"] += 1
+
+    return list(acc.values())
+
+
+def bulk_prepare_for_sku(sku: str) -> Tuple[bool, Dict[str, Any] | str, int]:
+    """
+    For a given SKU:
+      - finds all labels that are single-SKU (ignoring NoScan)
+      - only where that SKU matches and row still has remaining units
+      - fills product_id tokens so remaining_units == 0
+      - returns list of {source_file, page_index} for printing
+    """
+    sku_norm = _normalize_sku_for_db(sku)
+    if not sku_norm:
+        return False, "sku required", 400
+
+    rows = _read_all()
+    groups = _group_labels_by_page(rows)
+
+    labels: List[Dict[str, Any]] = []
+    updated = False
+
+    for g in groups.values():
+        rows_g = g["rows"]
+
+        # Distinct non-NoScan SKUs for this label
+        sku_set = set()
+        for r in rows_g:
+            raw = r.get("sku", "")
+            sk = _normalize_sku_for_db(raw)
+            if not sk:
+                continue
+            if _sku_type(sk) == "NoScan":
+                continue
+            sku_set.add(sk)
+
+        if len(sku_set) != 1:
+            continue
+
+        only_sku = next(iter(sku_set))
+        if only_sku != sku_norm:
+            continue  # different SKU
+
+        # Get the main row for this SKU
+        sku_rows = [r for r in rows_g if _normalize_sku_for_db(r.get("sku", "")) == sku_norm]
+        if not sku_rows:
+            continue
+        row = sku_rows[0]
+
+        qty = _row_qty(row)
+        done = _row_done_units(row)
+        if qty <= 0 or done >= qty:
+            continue  # nothing pending for this label
+
+        # Mark all units as "done" with bulk tokens
+        tokens = _pid_list(row.get("product_id", ""))
+        remaining = max(0, qty - len(tokens))
+        base = f"BULK-{sku_norm}-{row.get('row_id', g['page_index'])}"
+        for _ in range(remaining):
+            tokens.append(f"{base}-{len(tokens)+1}")
+        row["product_id"] = _pid_list_to_str(tokens)
+        updated = True
+
+        labels.append({
+            "source_file": g["source_file"],
+            "page_index": g["page_index"],
+        })
+
+    if updated:
+        _write_all(rows)
+
+    return True, {"sku": sku_norm, "labels": labels, "count": len(labels)}, 200

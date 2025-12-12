@@ -7,12 +7,13 @@
 from __future__ import annotations
 import os, io, base64, tempfile, platform, subprocess, traceback, db
 from typing import Any, List, Dict
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, Response
 import fitz
 
 from db import (
     init_db, get_all, upsert_orders, assign_product_id,
-    assign_barcode, confirm_extra, reload_masters, DB_PATH
+    assign_barcode, confirm_extra, reload_masters, DB_PATH,
+    bulk_single_sku_summary, bulk_prepare_for_sku,
 )
 from parser import parse_labels_from_pdf
 
@@ -55,6 +56,89 @@ def sku_contact(sku):
         if db._normalize_sku_for_db(r.get("sku", "")) == sku and db._row_remaining_units(r) > 0:
             return jsonify({"contact_number": r["contact_number"]})
     return jsonify({"contact_number": None})
+
+@app.get("/bulk_print_options")
+def bulk_print_options():
+    try:
+        skus = bulk_single_sku_summary()
+        return jsonify({"ok": True, "skus": skus})
+    except Exception as e:
+        app.logger.exception("BULK_PRINT_OPTIONS_FAILED")
+        return _json_error(f"Bulk options failed: {e}", 500)
+    
+@app.get("/bulk_label_print")
+def bulk_label_print():
+    """
+    Bulk print for a single SKU:
+      - marks all eligible single-SKU labels as fully assigned
+      - returns an HTML page with all those pages rendered, auto window.print()
+    Query: ?sku=AT0001
+    """
+    try:
+        sku = (request.args.get("sku") or "").strip()
+        if not sku:
+            return _json_error("sku required", 400)
+
+        ok, data_or_msg, status = bulk_prepare_for_sku(sku)
+        if not ok:
+            return _json_error(data_or_msg, status)
+
+        data = data_or_msg if isinstance(data_or_msg, dict) else {}
+        labels = data.get("labels", [])
+        if not labels:
+            return _json_error("No pending single-SKU labels for this SKU", 404)
+
+        # Render all pages as images
+        docs = {}
+        parts = []
+
+        for item in labels:
+            src = item["source_file"]
+            page_str = str(item["page_index"] or "0")
+            try:
+                page_i = int(page_str)
+            except ValueError:
+                continue
+            if page_i < 1:
+                continue
+
+            pdf_path = os.path.join(BASE_DIR, src)
+            if not os.path.exists(pdf_path):
+                continue
+
+            if src not in docs:
+                docs[src] = fitz.open(pdf_path)
+            pg = docs[src].load_page(page_i - 1)
+            pix = pg.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
+            b64 = base64.b64encode(pix.tobytes("png")).decode("ascii")
+
+            parts.append(
+                f'<div style="page-break-after:always;margin:0;padding:0;">'
+                f'<img src="data:image/png;base64,{b64}" '
+                f'style="width:100%;max-width:800px;display:block;margin:0 auto;"/>'
+                f'</div>'
+            )
+
+        for d in docs.values():
+            d.close()
+
+        body = "".join(parts)
+        html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Bulk print {data.get('sku', sku)}</title>
+  <style>body{{margin:0;padding:0;background:#ffffff;}}</style>
+</head>
+<body onload="window.print()">
+{body}
+</body>
+</html>"""
+
+        return Response(html, mimetype="text/html")
+    except Exception as e:
+        app.logger.exception("BULK_LABEL_PRINT_FAILED")
+        return _json_error(f"Bulk label print failed: {e}", 500)
 
 
 @app.get("/")
@@ -292,6 +376,26 @@ def admin_reload():
     except Exception as e:
         app.logger.exception("RELOAD_FAILED")
         return _json_error(f"Reload failed: {e}", 500)
+
+# Flipkart Bat File code
+import subprocess
+import os
+
+@app.post("/run_flipkart_bat")
+def run_flipkart_bat():
+    try:
+        bat_path = os.path.join(BASE_DIR, "x.bat")
+
+        if not os.path.exists(bat_path):
+            return _json_error("x.bat not found", 404)
+
+        subprocess.Popen([bat_path], shell=True)
+
+        return jsonify({"ok": True, "message": "Flipkart sync started"})
+    except Exception as e:
+        app.logger.exception("FLIPKART_BAT_FAILED")
+        return _json_error(f"Failed to run batch file: {e}", 500)
+
 
 # ---------- App start ----------
 if __name__ == "__main__":
